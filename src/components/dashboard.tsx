@@ -57,11 +57,11 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
             <article className="rounded-2xl border border-line bg-card p-4 shadow-sm md:p-5">
               <h2 className="text-base font-semibold">Зоны результативности</h2>
               <p className="mt-1 text-sm text-ink-soft">Сколько человек сейчас в красной, жёлтой и зелёной зоне.</p>
-              <ZoneChart counts={counts} teamSize={rows.length} />
+              <ZoneChart counts={counts} />
             </article>
             <article className="rounded-2xl border border-line bg-card p-4 shadow-sm md:p-5">
               <h2 className="text-base font-semibold">КР по сотрудникам</h2>
-              <p className="mt-1 text-sm text-ink-soft">Пунктир на 80% и 100%. Шкала графика доходит до потолка 130%.</p>
+              <p className="mt-1 text-sm text-ink-soft">Пунктир отмечает 80% и 100%. Шкала графика — до 130%.</p>
               <TeamKrChart rows={rows.map((row) => ({ id: row.employee.id, name: row.employee.name, kr: row.kr }))} />
             </article>
           </section>
