@@ -1,0 +1,147 @@
+import { useEffect, useState } from 'react'
+import { LayoutDashboard, Menu, Settings, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { Route } from '../lib/routes.ts'
+import { useTeamStore } from '../store/team-store.ts'
+
+export function Shell({
+  route,
+  onNavigate,
+  children,
+}: {
+  route: Route
+  onNavigate: (route: Route) => void
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  function go(next: Route) {
+    setOpen(false)
+    onNavigate(next)
+  }
+
+  return (
+    <div className="min-h-screen bg-paper text-ink md:grid md:grid-cols-[16.5rem_1fr]">
+      <aside className="sticky top-0 hidden h-screen md:block">
+        <Sidebar route={route} onNavigate={go} />
+      </aside>
+      {open ? (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <button type="button" aria-label="Закрыть меню" className="absolute inset-0 bg-ink/45" onClick={() => setOpen(false)} />
+          <div className="relative h-full w-[16.5rem] max-w-[86vw] shadow-xl">
+            <Sidebar route={route} onNavigate={go} />
+          </div>
+        </div>
+      ) : null}
+      <div className="min-w-0">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-paper/95 px-4 py-3 backdrop-blur md:hidden">
+          <button type="button" className="grid size-10 place-items-center rounded-lg border border-line bg-card" aria-label="Открыть меню" onClick={() => setOpen(true)}>
+            {open ? <X className="size-4" /> : <Menu className="size-4" />}
+          </button>
+          <p className="text-sm font-semibold">KPI-Drive</p>
+          <span className="size-10" />
+        </header>
+        <main className="px-4 py-6 md:px-8 md:py-8">{children}</main>
+      </div>
+    </div>
+  )
+}
+
+function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Route) => void }) {
+  const employees = useTeamStore((state) => state.employees)
+  const periodLabel = useTeamStore((state) => state.periodLabel)
+
+  return (
+    <div className="flex h-full flex-col bg-ink text-[#f6f3ec]">
+      <div className="flex items-center gap-3 px-5 pt-6 pb-5">
+        <svg viewBox="0 0 32 32" className="size-10" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="#243044" />
+          <path d="M8 20a8 8 0 1 1 16 0" fill="none" stroke="#e7d7b0" strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M10.2 19.2a6 6 0 0 1 9.4-2.6" fill="none" stroke="#d7b15a" strokeWidth="2.2" strokeLinecap="round" />
+        </svg>
+        <div>
+          <p className="text-sm font-semibold tracking-wide">KPI-Drive</p>
+          <p className="text-xs text-white/55">Матрица Литягина</p>
+        </div>
+      </div>
+      <nav className="grid gap-1 px-3">
+        <NavButton
+          active={route.name === 'dashboard'}
+          onClick={() => onNavigate({ name: 'dashboard' })}
+          icon={<LayoutDashboard className="size-4" />}
+          label="Дашборд"
+        />
+        <NavButton
+          active={route.name === 'settings'}
+          onClick={() => onNavigate({ name: 'settings' })}
+          icon={<Settings className="size-4" />}
+          label="Настройки"
+        />
+      </nav>
+      <p className="mt-6 px-5 text-[11px] font-semibold tracking-[0.16em] text-white/45 uppercase">Матрицы</p>
+      <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        {employees.length === 0 ? (
+          <p className="px-2 py-2 text-sm text-white/50">Список пуст</p>
+        ) : (
+          employees.map((employee) => {
+            const active = route.name === 'matrix' && route.employeeId === employee.id
+            return (
+              <button
+                key={employee.id}
+                type="button"
+                onClick={() => onNavigate({ name: 'matrix', employeeId: employee.id })}
+                className={cn(
+                  'mb-1 w-full rounded-lg px-2 py-2 text-left',
+                  active ? 'bg-white/10' : 'hover:bg-white/5',
+                )}
+              >
+                <span className="block truncate text-sm font-medium">{employee.name}</span>
+                <span className="block truncate text-xs text-white/50">{employee.position}</span>
+              </button>
+            )
+          })
+        )}
+      </div>
+      <div className="border-t border-white/10 px-5 py-4">
+        <p className="text-xs text-white/45">Период</p>
+        <p className="mt-1 text-sm font-medium">{periodLabel || 'Не задан'}</p>
+        <p className="mt-3 text-xs leading-relaxed text-white/45">Считается только КР. Оклады и премии не участвуют.</p>
+      </div>
+    </div>
+  )
+}
+
+function NavButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium',
+        active ? 'bg-white/10 text-white' : 'text-white/75 hover:bg-white/5 hover:text-white',
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
