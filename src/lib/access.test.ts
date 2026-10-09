@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultStandardPoints } from './calc.ts'
+import { sanitizeEmployees } from './org.ts'
 import { publishPeriods } from './period.ts'
 import { defaultSmartPoints } from './smart.ts'
 import { mergeUserTeam, userChangeAllowed, visibleTeam } from './access.ts'
@@ -117,5 +118,66 @@ describe('user permissions', () => {
     expect(personTask?.type === 'smart' ? personTask.tasks[0]?.status : null).toBe('done')
     expect(hiddenTask?.type === 'smart' ? hiddenTask.tasks[0]?.status : null).toBe('created')
     expect(merged?.view.employees.map((item) => item.id)).toEqual(['person'])
+  })
+
+  it('saves a new smart task when the client drops a manager outside the granted matrices', () => {
+    const stored = team()
+    const boss = structuredClone(stored.employees[0]!)
+    boss.id = 'boss'
+    boss.name = 'Руководитель'
+    boss.managerId = null
+    boss.indicators = []
+    const person = stored.employees[0]!
+    person.managerId = 'boss'
+    stored.periods[0]!.employees = [boss, person]
+    stored.employees = stored.periods[0]!.employees
+    const allowed = new Set(['person'])
+    const incoming = structuredClone(visibleTeam(stored, allowed))
+    incoming.employees = sanitizeEmployees(incoming.employees)
+    incoming.periods = incoming.periods.map((period) => ({
+      ...period,
+      employees: sanitizeEmployees(period.employees),
+    }))
+    const smart = incoming.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (smart?.type !== 'smart') throw new Error('missing smart')
+    smart.tasks.push({ ...task('created', 'fresh'), name: 'Новая задача' })
+    incoming.periods[0]!.employees = incoming.employees
+    expect(incoming.employees[0]?.managerId).toBeNull()
+
+    const merged = mergeUserTeam(stored, incoming, allowed)
+    const savedPerson = merged?.saved.employees.find((item) => item.id === 'person')
+    const savedBoss = merged?.saved.employees.find((item) => item.id === 'boss')
+    const savedSmart = savedPerson?.indicators.find((item) => item.type === 'smart')
+    const viewSmart = merged?.view.employees
+      .find((item) => item.id === 'person')
+      ?.indicators.find((item) => item.type === 'smart')
+    expect(savedPerson?.managerId).toBe('boss')
+    expect(savedBoss?.name).toBe('Руководитель')
+    expect(savedSmart?.type === 'smart' ? savedSmart.tasks.map((item) => item.id) : []).toEqual(['task', 'fresh'])
+    expect(viewSmart?.type === 'smart' ? viewSmart.tasks.map((item) => item.name) : []).toContain('Новая задача')
+  })
+
+  it('does not let a user add a smart block or rewrite a standard', () => {
+    const stored = team()
+    const allowed = new Set(['person'])
+    const block = structuredClone(visibleTeam(stored, allowed))
+    block.employees[0]!.indicators.push({
+      id: 'extra',
+      type: 'smart',
+      weight: 10,
+      points: defaultSmartPoints(),
+      tasks: [task('created', 'extra-task')],
+    })
+    block.periods[0]!.employees = block.employees
+    expect(mergeUserTeam(stored, block, allowed)).toBeNull()
+
+    const scored = structuredClone(visibleTeam(stored, allowed))
+    const standard = scored.employees[0]?.indicators.find((item) => item.type === 'standard')
+    if (standard?.type !== 'standard') throw new Error('missing standard')
+    standard.score = 2
+    scored.periods[0]!.employees = scored.employees
+    const merged = mergeUserTeam(stored, scored, allowed)
+    const saved = merged?.saved.employees[0]?.indicators.find((item) => item.type === 'standard')
+    expect(saved?.type === 'standard' ? saved.score : null).toBe(0)
   })
 })

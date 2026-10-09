@@ -59,16 +59,29 @@ function indicatorAllowed(before: Indicator, after: Indicator) {
 
 function smartAllowed(before: SmartIndicator, after: SmartIndicator) {
   if (before.weight !== after.weight || stable(before.points) !== stable(after.points)) return false
-  if (after.tasks.length < before.tasks.length) return false
+  return applySmartTasks(before, after) !== null
+}
+
+function applySmartTasks(before: SmartIndicator, after: SmartIndicator): SmartTask[] | null {
+  if (after.tasks.length < before.tasks.length) return null
   const afterTasks = new Map(after.tasks.map((task) => [task.id, task]))
+  if (afterTasks.size !== after.tasks.length) return null
   const known = new Set(before.tasks.map((task) => task.id))
-  const kept = before.tasks.every((task) => {
+  const tasks: SmartTask[] = []
+  for (const task of before.tasks) {
     const next = afterTasks.get(task.id)
-    if (!next || stable(withoutStatus(task)) !== stable(withoutStatus(next))) return false
-    return next.status === task.status || (next.status === 'done' && task.status !== 'done' && task.status !== 'closed')
-  })
-  if (!kept) return false
-  return after.tasks.every((task) => known.has(task.id) || newTaskAllowed(task))
+    if (!next || stable(withoutStatus(task)) !== stable(withoutStatus(next))) return null
+    const statusOk =
+      next.status === task.status || (next.status === 'done' && task.status !== 'done' && task.status !== 'closed')
+    if (!statusOk) return null
+    tasks.push(next.status === task.status ? task : { ...task, status: next.status })
+  }
+  for (const task of after.tasks) {
+    if (known.has(task.id)) continue
+    if (!newTaskAllowed(task)) return null
+    tasks.push(task)
+  }
+  return tasks
 }
 
 function newTaskAllowed(task: SmartTask) {
@@ -127,14 +140,37 @@ function mergePeriod(stored: PeriodSnapshot, incoming: PeriodSnapshot, allowedId
   const visible = visiblePeriod(stored, allowedIds).employees
   if (!sameIds(visible, incoming.employees)) return null
   const incomingEmployees = new Map(incoming.employees.map((employee) => [employee.id, employee]))
-  for (const employee of visible) {
+  const employees: Employee[] = []
+  for (const employee of stored.employees) {
+    if (!allowedIds.has(employee.id)) {
+      employees.push(employee)
+      continue
+    }
     const next = incomingEmployees.get(employee.id)
-    if (!next || !employeeAllowed(employee, next)) return null
+    if (!next) return null
+    const applied = applyEmployeeEdit(employee, next)
+    if (!applied) return null
+    employees.push(applied)
   }
-  return {
-    ...stored,
-    employees: stored.employees.map((employee) => incomingEmployees.get(employee.id) ?? employee),
+  return { ...stored, employees }
+}
+
+function applyEmployeeEdit(before: Employee, after: Employee): Employee | null {
+  if (before.indicators.length !== after.indicators.length) return null
+  const afterIndicators = new Map(after.indicators.map((indicator) => [indicator.id, indicator]))
+  const indicators: Indicator[] = []
+  for (const indicator of before.indicators) {
+    const next = afterIndicators.get(indicator.id)
+    if (!next || next.type !== indicator.type) return null
+    if (indicator.type !== 'smart' || next.type !== 'smart') {
+      indicators.push(indicator)
+      continue
+    }
+    const tasks = applySmartTasks(indicator, next)
+    if (!tasks) return null
+    indicators.push({ ...indicator, tasks })
   }
+  return { ...before, indicators }
 }
 
 function createPeriod(
