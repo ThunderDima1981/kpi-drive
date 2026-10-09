@@ -3,8 +3,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
-import { defaultKpiPoints, kpiCompletionOf, planPoint } from '../lib/calc.ts'
-import { formatNumber, formatPercent, parseNumber } from '../lib/format.ts'
+import { PlanInput } from './plan-input.tsx'
+import { defaultKpiPoints, kpiCompletionOf } from '../lib/calc.ts'
+import { formatNumber, formatPercent } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { CatalogKpi } from '../types.ts'
 
@@ -42,7 +43,7 @@ export function KpiCatalogSection() {
     <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
       <h2 className="font-semibold">Справочник количественных KPI</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        План, факт и шкала относятся к периоду «{periodLabel}». План — это точка со 100% выполнения. В матрице у сотрудника задаётся только вес.
+        План, факт и шкала относятся к периоду «{periodLabel}». План — точка со 100% выполнения, его можно изменить здесь и в матрице. В другом месяце план и факт свои.
       </p>
       <form onSubmit={add} className="mt-4 grid gap-3 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
         <Label className="grid gap-1.5">
@@ -84,57 +85,6 @@ export function KpiCatalogSection() {
       )}
       <KpiScaleDialog kpi={chart} onOpenChange={(open) => { if (!open) setChartId(null) }} />
     </section>
-  )
-}
-
-function PlanField({ item }: { item: CatalogKpi }) {
-  const setCatalogPlan = useTeamStore((state) => state.setCatalogPlan)
-  const plan = planPoint(item.points)
-  const [draft, setDraft] = useState(plan ? String(plan.value) : '')
-  const [saved, setSaved] = useState(plan?.value)
-  const [error, setError] = useState('')
-  if (saved !== plan?.value) {
-    setSaved(plan?.value)
-    setDraft(plan ? String(plan.value) : '')
-    setError('')
-  }
-
-  function commit() {
-    const parsed = parseNumber(draft)
-    if (parsed === null) {
-      setError('Введите число.')
-      setDraft(plan ? String(plan.value) : '')
-      return
-    }
-    if (plan && parsed === plan.value) {
-      setError('')
-      return
-    }
-    const message = setCatalogPlan(item.id, parsed)
-    if (message) {
-      setError(message)
-      setDraft(plan ? String(plan.value) : '')
-      return
-    }
-    setError('')
-  }
-
-  return (
-    <Label className="grid gap-1.5">
-      <span>План{item.unit ? `, ${item.unit}` : ''}</span>
-      <Input
-        inputMode="decimal"
-        value={draft}
-        aria-label={`План: ${item.name}`}
-        aria-invalid={Boolean(error)}
-        onValueChange={(value) => {
-          setDraft(value)
-          if (error) setError('')
-        }}
-        onBlur={commit}
-      />
-      {error ? <span className="text-xs font-normal text-destructive">{error}</span> : null}
-    </Label>
   )
 }
 
@@ -189,7 +139,10 @@ function CatalogRow({
         </Label>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-[11rem_1fr] sm:items-end">
-        <PlanField item={item} />
+        <Label className="grid gap-1.5">
+          <span>План{item.unit ? `, ${item.unit}` : ''}</span>
+          <PlanInput kpiId={item.id} className="h-8 w-full" />
+        </Label>
         <p className="text-xs text-ink-soft">
           Факт {formatNumber(item.fact)}
           {item.unit ? ` ${item.unit}` : ''} · Выполнение {formatPercent(kpiCompletionOf(item))}

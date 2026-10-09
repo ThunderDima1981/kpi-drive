@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { completionOf, defaultStandardPoints, matrixResult } from './calc.ts'
+import { completionOf, defaultStandardPoints, matrixResult, planPoint } from './calc.ts'
 import { defaultSmartPoints } from './smart.ts'
 import { emptyTeam, ensurePeriod, formatPeriod, parsePeriodLabel, publishPeriods } from './period.ts'
+import { useTeamStore } from '../store/team-store.ts'
 import type { TeamData } from '../types.ts'
 
 function filledMonth(): TeamData {
@@ -104,8 +105,8 @@ describe('periods', () => {
     const novemberPerson = november?.employees[0]
     const octoberSmart = octoberPerson?.indicators.find((item) => item.type === 'smart')
     const novemberSmart = novemberPerson?.indicators.find((item) => item.type === 'smart')
-    expect(octoberSmart?.type === 'smart' ? octoberSmart.tasks[0]?.status : null).toBe('in_progress')
-    expect(novemberSmart?.type === 'smart' ? novemberSmart.tasks[0]?.status : null).toBe('created')
+    expect(octoberSmart?.type === 'smart' ? octoberSmart.tasks.map((task) => task.status) : []).toEqual(['in_progress'])
+    expect(novemberSmart?.type === 'smart' ? novemberSmart.tasks : null).toEqual([])
     expect(novemberPerson ? completionOf(novemberPerson.indicators[0]!, november!.kpiCatalog) : null).toBe(0)
     expect(novemberPerson ? matrixResult(novemberPerson.indicators, november!.kpiCatalog).kr : null).toBe(10)
 
@@ -119,5 +120,28 @@ describe('periods', () => {
     expect(back.employees[0]?.indicators.find((item) => item.type === 'smart')).toMatchObject({
       tasks: [{ status: 'in_progress' }],
     })
+  })
+
+  it('stores a later month’s plan and fact apart from the month they were copied from', () => {
+    useTeamStore.getState().replaceTeam(filledMonth())
+    expect(useTeamStore.getState().setCatalogPlan('leads', 1100)).toBeNull()
+    useTeamStore.getState().setCatalogFact('leads', 42)
+    useTeamStore.getState().selectPeriod('2026-11')
+    const opened = useTeamStore.getState()
+    expect(opened.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(500)
+    expect(planPoint(opened.kpiCatalog.find((item) => item.id === 'leads')!.points)?.value).toBe(1100)
+    expect(opened.employees[0]?.indicators.find((item) => item.type === 'smart')).toMatchObject({ tasks: [] })
+    expect(useTeamStore.getState().setCatalogPlan('leads', 800)).toBeNull()
+    useTeamStore.getState().setCatalogFact('leads', 700)
+    useTeamStore.getState().selectPeriod('2026-10')
+    const october = useTeamStore.getState()
+    expect(october.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(42)
+    expect(planPoint(october.kpiCatalog.find((item) => item.id === 'leads')!.points)?.value).toBe(1100)
+    expect(october.employees[0]?.indicators.find((item) => item.type === 'standard')).toMatchObject({ score: 1 })
+    useTeamStore.getState().selectPeriod('2026-11')
+    const november = useTeamStore.getState()
+    expect(november.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(700)
+    expect(planPoint(november.kpiCatalog.find((item) => item.id === 'leads')!.points)?.value).toBe(800)
+    expect(november.employees[0]?.indicators.find((item) => item.type === 'standard')).toMatchObject({ score: 0 })
   })
 })

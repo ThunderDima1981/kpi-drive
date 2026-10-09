@@ -90,12 +90,7 @@ export function freshPeriod(source: TeamData['periods'][number], id: string) {
 }
 
 function resetIndicator(indicator: Indicator): Indicator {
-  if (indicator.type === 'smart') {
-    return {
-      ...indicator,
-      tasks: indicator.tasks.map((task) => ({ ...task, status: 'created', comments: [] })),
-    }
-  }
+  if (indicator.type === 'smart') return { ...indicator, tasks: [] }
   if (indicator.type === 'standard') return { ...indicator, score: 0 }
   return indicator
 }

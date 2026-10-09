@@ -26,7 +26,7 @@ export function PeriodCalendar({
       <p className="text-xs font-semibold tracking-[0.14em] text-gold uppercase">Период</p>
       <p className="mt-1 text-lg font-semibold">{formatPeriod(value)}</p>
       <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-        Месяц и год. Новый месяц копирует состав и план: факт встаёт на 0% шкалы, smart-задачи получают статус «Создан», оценки стандартов — 0.
+        Новый месяц копирует состав матрицы. План и факт заполняются заново, оценки стандартов начинаются с 0, smart-задачи создаются заново.
       </p>
       <div className="mt-3 flex items-center justify-between gap-2">
         <button

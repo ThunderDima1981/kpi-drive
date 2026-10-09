@@ -3,6 +3,7 @@ import { ArrowLeft, ChartLine, Check, ListChecks, Pencil, Plus, ShieldCheck, Tar
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DecimalInput } from './decimal-input.tsx'
+import { PlanInput } from './plan-input.tsx'
 import { IndicatorDialog } from './indicator-dialog.tsx'
 import { KpiAssignDialog, KpiWeightDialog } from './kpi-assign-dialog.tsx'
 import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
@@ -64,19 +65,19 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'kpi',
       title: 'Количественные KPI',
-      hint: 'Показатель из справочника выбранного месяца. План, факт и точки шкалы общие для команды в этом периоде, в матрице задаётся вес.',
+      hint: `План и факт за ${periodLabel} общие для команды. В другом месяце они свои. Состав матрицы сохраняется, пока его не изменить в выбранном месяце.`,
       icon: Target,
     },
     {
       type: 'smart',
       title: 'Smart-задачи',
-      hint: 'Один показатель матрицы со своим весом. Веса задач в сумме могут быть больше 100%. График переводит процент выполненных задач во влияние на вес блока.',
+      hint: 'Блок со своим весом остаётся в матрице месяца. Задачи создаются заново в каждом месяце. Сумма их весов может быть больше 100%.',
       icon: ListChecks,
     },
     {
       type: 'standard',
       title: 'Стандарты',
-      hint: 'Оценщик выбирается из сотрудников. На графике задаются точки шкалы и процент выполнения каждой.',
+      hint: 'Оценка ставится за выбранный месяц. Оценщик выбирается из сотрудников, шкала задаётся на графике.',
       icon: ShieldCheck,
     },
   ]
@@ -291,7 +292,16 @@ function KpiTable({
                 </th>
                 <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
                 <td className="px-3 py-3">
-                  {plan && shared ? <Quantity value={plan.value} unit={shared.unit} /> : '—'}
+                  {shared && admin ? (
+                    <span className="flex items-center gap-2">
+                      <PlanInput kpiId={shared.id} />
+                      {shared.unit ? <span className="text-xs text-ink-soft">{shared.unit}</span> : null}
+                    </span>
+                  ) : plan && shared ? (
+                    <Quantity value={plan.value} unit={shared.unit} />
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td className="bg-pine/5 px-3 py-3">
                   {shared ? (
