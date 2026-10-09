@@ -5,29 +5,38 @@ import {
   explainKpi,
   explainStandard,
   kpiCompletion,
+  kpiCompletionOf,
   matrixResult,
   normalizeEvaluatorId,
+  planPoint,
+  pointsFromLegacyScale,
   scaleOrderIssue,
   standardSeries,
   weightedOf,
+  type KpiScale,
 } from './calc.ts'
 import { normalizeIndicator, smartCompletion } from './smart.ts'
-import type { KpiIndicator } from '../types.ts'
+import type { CatalogKpi } from '../types.ts'
 
-function leads(fact: number, extra: Partial<KpiIndicator> = {}): KpiIndicator {
+function leads(fact: number, extra: Partial<KpiScale> = {}): KpiScale {
   return {
-    id: 'kpi',
-    type: 'kpi',
-    name: 'Лиды',
-    weight: 40,
     threshold: 500,
     plan: 1000,
     maximum: 1200,
     fact,
     inverse: false,
     maxCap: 130,
-    unit: 'шт',
     ...extra,
+  }
+}
+
+function catalogFrom(id: string, scale: KpiScale, unit = 'шт'): CatalogKpi {
+  return {
+    id,
+    name: 'Лиды',
+    unit,
+    fact: scale.fact,
+    points: pointsFromLegacyScale(id, scale),
   }
 }
 
@@ -59,7 +68,6 @@ describe('kpiCompletion', () => {
       plan: 300,
       maximum: 250,
       inverse: true,
-      unit: '₽',
     })
     expect(kpiCompletion(cpl)).toBe(80)
     expect(kpiCompletion({ ...cpl, fact: 400 })).toBe(0)
@@ -71,33 +79,57 @@ describe('kpiCompletion', () => {
   })
 })
 
+describe('shared kpi catalog', () => {
+  it('keeps the classic threshold-plan-maximum scale as chart points', () => {
+    expect(kpiCompletionOf(catalogFrom('kpi-leads', leads(900)))).toBe(kpiCompletion(leads(900)))
+    expect(kpiCompletionOf(catalogFrom('kpi-leads', leads(499)))).toBe(0)
+    expect(kpiCompletionOf(catalogFrom('kpi-leads', leads(1100)))).toBe(115)
+    expect(kpiCompletionOf(catalogFrom('kpi-leads', leads(1400)))).toBe(130)
+    const inverse = leads(320, { threshold: 400, plan: 300, maximum: 250, inverse: true })
+    expect(kpiCompletionOf(catalogFrom('kpi-cpl', inverse, '₽'))).toBe(80)
+    expect(planPoint(pointsFromLegacyScale('kpi-leads', leads(900)))?.value).toBe(1000)
+  })
+
+  it('uses one shared fact for every matrix that includes the indicator', () => {
+    const seed = createSeed()
+    const catalog = seed.kpiCatalog.map((item) => (item.id === 'kpi-leads' ? { ...item, fact: 1000 } : item))
+    const ivanov = seed.employees.find((employee) => employee.id === 'emp-ivanov')
+    const leads = ivanov?.indicators.find((item) => item.type === 'kpi' && item.catalogId === 'kpi-leads')
+    expect(completionOf(leads!, catalog)).toBe(100)
+    expect(seed.kpiCatalog.find((item) => item.id === 'kpi-leads')?.fact).toBe(900)
+  })
+})
+
 describe('matrixResult', () => {
   it('calculates Ivanov exactly as the weighted sum of the demo matrix', () => {
-    const ivanov = createSeed().employees.find((employee) => employee.id === 'emp-ivanov')
+    const seed = createSeed()
+    const ivanov = seed.employees.find((employee) => employee.id === 'emp-ivanov')
     expect(ivanov).toBeDefined()
-    const result = matrixResult(ivanov!.indicators)
+    const result = matrixResult(ivanov!.indicators, seed.kpiCatalog)
     expect(result.weightSum).toBe(100)
-    expect(completionOf(ivanov!.indicators[0]!)).toBe(80)
-    expect(weightedOf(ivanov!.indicators[0]!)).toBe(32)
-    expect(completionOf(ivanov!.indicators[1]!)).toBe(80)
-    expect(weightedOf(ivanov!.indicators[1]!)).toBe(16)
-    expect(completionOf(ivanov!.indicators[2]!)).toBe(0)
-    expect(weightedOf(ivanov!.indicators[2]!)).toBe(0)
-    expect(completionOf(ivanov!.indicators[3]!)).toBe(100)
-    expect(weightedOf(ivanov!.indicators[3]!)).toBe(10)
+    expect(completionOf(ivanov!.indicators[0]!, seed.kpiCatalog)).toBe(80)
+    expect(weightedOf(ivanov!.indicators[0]!, seed.kpiCatalog)).toBe(32)
+    expect(completionOf(ivanov!.indicators[1]!, seed.kpiCatalog)).toBe(80)
+    expect(weightedOf(ivanov!.indicators[1]!, seed.kpiCatalog)).toBe(16)
+    expect(completionOf(ivanov!.indicators[2]!, seed.kpiCatalog)).toBe(0)
+    expect(weightedOf(ivanov!.indicators[2]!, seed.kpiCatalog)).toBe(0)
+    expect(completionOf(ivanov!.indicators[3]!, seed.kpiCatalog)).toBe(100)
+    expect(weightedOf(ivanov!.indicators[3]!, seed.kpiCatalog)).toBe(10)
     expect(result.kr).toBe(58)
     expect(result.byType).toEqual({ kpi: 48, smart: 0, standard: 10 })
   })
 
   it('keeps every demo matrix at 100% weight', () => {
-    for (const employee of createSeed().employees) {
-      expect(matrixResult(employee.indicators).weightSum).toBe(100)
+    const seed = createSeed()
+    for (const employee of seed.employees) {
+      expect(matrixResult(employee.indicators, seed.kpiCatalog).weightSum).toBe(100)
     }
   })
 
   it('places the demo team into the expected zones', () => {
+    const seed = createSeed()
     const results = Object.fromEntries(
-      createSeed().employees.map((employee) => [employee.id, matrixResult(employee.indicators).kr]),
+      seed.employees.map((employee) => [employee.id, matrixResult(employee.indicators, seed.kpiCatalog).kr]),
     )
     expect(results['emp-petrova']).toBeCloseTo(109.75)
     expect(results['emp-sidorov']).toBeCloseTo(14.5)
@@ -140,8 +172,9 @@ describe('scale checks', () => {
     expect(scaleOrderIssue(leads(320, { threshold: 400, plan: 300, maximum: 250, inverse: true }))).toBeNull()
   })
 
-  it('explains the Ivanov lead fact in plain language', () => {
-    expect(explainKpi(leads(900))).toMatch(/порогом и планом/)
+  it('explains a shared KPI from its chart points', () => {
+    expect(explainKpi(catalogFrom('kpi-leads', leads(900)))).toMatch(/80%/)
+    expect(explainKpi(catalogFrom('kpi-leads', leads(900)))).toMatch(/План/)
   })
 })
 

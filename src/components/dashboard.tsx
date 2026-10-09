@@ -9,11 +9,12 @@ import { useTeamStore } from '../store/team-store.ts'
 
 export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: (id: string) => void; onOpenSettings: () => void }) {
   const employees = useTeamStore((state) => state.employees)
+  const kpiCatalog = useTeamStore((state) => state.kpiCatalog)
   const periodLabel = useTeamStore((state) => state.periodLabel)
   const org = useOrgList(employees)
   const rows = employees
     .map((employee) => {
-      const result = matrixResult(employee.indicators)
+      const result = matrixResult(employee.indicators, kpiCatalog)
       return { employee, ...result, zone: zoneOf(result.kr) }
     })
     .sort((a, b) => b.kr - a.kr)

@@ -1,5 +1,14 @@
-import { DEFAULT_MAX_CAP, defaultStandardPoints } from '../lib/calc.ts'
-import type { Employee, KpiIndicator, SmartComment, SmartIndicator, SmartStatus, StandardIndicator, TeamData } from '../types.ts'
+import { DEFAULT_MAX_CAP, defaultStandardPoints, pointsFromLegacyScale } from '../lib/calc.ts'
+import type {
+  CatalogKpi,
+  Employee,
+  KpiIndicator,
+  SmartComment,
+  SmartIndicator,
+  SmartStatus,
+  StandardIndicator,
+  TeamData,
+} from '../types.ts'
 
 function smart(
   id: string,
@@ -24,6 +33,7 @@ function standard(
 }
 
 function kpi(
+  catalog: CatalogKpi[],
   id: string,
   name: string,
   weight: number,
@@ -34,22 +44,25 @@ function kpi(
   unit: string,
   inverse = false,
 ): KpiIndicator {
-  return {
+  catalog.push({
     id,
-    type: 'kpi',
     name,
-    weight,
-    threshold,
-    plan,
-    maximum,
-    fact,
-    inverse,
-    maxCap: DEFAULT_MAX_CAP,
     unit,
-  }
+    fact,
+    points: pointsFromLegacyScale(id, {
+      threshold,
+      plan,
+      maximum,
+      fact,
+      inverse,
+      maxCap: DEFAULT_MAX_CAP,
+    }),
+  })
+  return { id, type: 'kpi', catalogId: id, weight }
 }
 
 export function createSeed(): TeamData {
+  const kpiCatalog: CatalogKpi[] = []
   const employees: Employee[] = [
     {
       id: 'emp-ivanov',
@@ -57,8 +70,8 @@ export function createSeed(): TeamData {
       position: 'Директор по маркетингу',
       managerId: null,
       indicators: [
-        kpi('kpi-leads', 'Количество лидов', 40, 500, 1000, 1200, 900, 'шт'),
-        kpi('kpi-cpl', 'CPL / Стоимость лида', 20, 400, 300, 250, 320, '₽', true),
+        kpi(kpiCatalog, 'kpi-leads', 'Количество лидов', 40, 500, 1000, 1200, 900, 'шт'),
+        kpi(kpiCatalog, 'kpi-cpl', 'CPL / Стоимость лида', 20, 400, 300, 250, 320, '₽', true),
         smart(
           'smart-landing',
           'Запуск нового лендинга',
@@ -83,8 +96,8 @@ export function createSeed(): TeamData {
       position: 'Руководитель отдела продаж',
       managerId: null,
       indicators: [
-        kpi('kpi-revenue', 'Выручка', 50, 8, 12, 15, 13.2, 'млн ₽'),
-        kpi('kpi-conversion', 'Конверсия сделок', 25, 15, 25, 35, 28, '%'),
+        kpi(kpiCatalog, 'kpi-revenue', 'Выручка', 50, 8, 12, 15, 13.2, 'млн ₽'),
+        kpi(kpiCatalog, 'kpi-conversion', 'Конверсия сделок', 25, 15, 25, 35, 28, '%'),
         smart(
           'smart-crm',
           'Внедрение CRM',
@@ -109,8 +122,8 @@ export function createSeed(): TeamData {
       position: 'Аналитик',
       managerId: 'emp-ivanov',
       indicators: [
-        kpi('kpi-reports', 'Отчёты в срок', 40, 8, 12, 16, 7, 'шт'),
-        kpi('kpi-accuracy', 'Точность прогноза', 30, 70, 90, 98, 75, '%'),
+        kpi(kpiCatalog, 'kpi-reports', 'Отчёты в срок', 40, 8, 12, 16, 7, 'шт'),
+        kpi(kpiCatalog, 'kpi-accuracy', 'Точность прогноза', 30, 70, 90, 98, 75, '%'),
         smart(
           'smart-board',
           'Дашборд для совета директоров',
@@ -128,8 +141,8 @@ export function createSeed(): TeamData {
       position: 'HR-партнёр',
       managerId: null,
       indicators: [
-        kpi('kpi-vacancies', 'Закрытые вакансии', 35, 4, 8, 12, 8, 'шт'),
-        kpi('kpi-turnover', 'Текучесть', 25, 18, 12, 8, 11, '%', true),
+        kpi(kpiCatalog, 'kpi-vacancies', 'Закрытые вакансии', 35, 4, 8, 12, 8, 'шт'),
+        kpi(kpiCatalog, 'kpi-turnover', 'Текучесть', 25, 18, 12, 8, 11, '%', true),
         smart(
           'smart-onboarding',
           'Программа адаптации',
@@ -147,8 +160,8 @@ export function createSeed(): TeamData {
       position: 'Руководитель продукта',
       managerId: null,
       indicators: [
-        kpi('kpi-nps', 'NPS продукта', 30, 20, 40, 60, 55, 'п.'),
-        kpi('kpi-release', 'Срок релиза', 30, 30, 21, 14, 18, 'дн.', true),
+        kpi(kpiCatalog, 'kpi-nps', 'NPS продукта', 30, 20, 40, 60, 55, 'п.'),
+        kpi(kpiCatalog, 'kpi-release', 'Срок релиза', 30, 30, 21, 14, 18, 'дн.', true),
         smart(
           'smart-release',
           'Запуск онбординга в продукте',
@@ -165,5 +178,6 @@ export function createSeed(): TeamData {
   return {
     periodLabel: 'Октябрь 2026',
     employees,
+    kpiCatalog,
   }
 }

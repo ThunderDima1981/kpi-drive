@@ -1,5 +1,6 @@
+import { formatNumber } from './format.ts'
 import { smartCompletion } from './smart.ts'
-import type { Indicator, KpiIndicator, ScalePoint, StandardIndicator, StandardScore } from '../types.ts'
+import type { CatalogKpi, Indicator, KpiPoint, ScalePoint, StandardIndicator, StandardScore } from '../types.ts'
 
 export const DEFAULT_MAX_CAP = 130
 
@@ -52,6 +53,77 @@ export function kpiCompletion(input: KpiScale): number {
   const span = plan - maximum
   if (span <= 0 || fact <= maximum) return cap
   return 100 + ((plan - fact) / span) * (cap - 100)
+}
+
+export function pointsFromLegacyScale(id: string, input: KpiScale): KpiPoint[] {
+  const cap = Number.isFinite(input.maxCap) ? input.maxCap : DEFAULT_MAX_CAP
+  if (input.inverse) {
+    return [
+      { id: `${id}-max`, value: input.maximum, completion: cap },
+      { id: `${id}-plan`, value: input.plan, completion: 100 },
+      { id: `${id}-threshold`, value: input.threshold, completion: 0 },
+    ]
+  }
+  return [
+    { id: `${id}-threshold`, value: input.threshold, completion: 0 },
+    { id: `${id}-plan`, value: input.plan, completion: 100 },
+    { id: `${id}-max`, value: input.maximum, completion: cap },
+  ]
+}
+
+export function defaultKpiPoints(prefix = 'kpi'): KpiPoint[] {
+  return [
+    { id: `${prefix}-0`, value: 0, completion: 0 },
+    { id: `${prefix}-plan`, value: 100, completion: 100 },
+    { id: `${prefix}-max`, value: 200, completion: 130 },
+  ]
+}
+
+export function asScalePoints(points: KpiPoint[]): ScalePoint[] {
+  return points.map((point) => ({ id: point.id, score: point.value, completion: point.completion }))
+}
+
+export function planPoint(points: KpiPoint[]): KpiPoint | null {
+  return (
+    points
+      .filter((point) => Number.isFinite(point.value) && nearlyEqual(point.completion, 100))
+      .slice()
+      .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id))[0] ?? null
+  )
+}
+
+export function kpiCompletionOf(kpi: CatalogKpi): number {
+  return completionOnScale(kpi.fact, asScalePoints(kpi.points))
+}
+
+export function normalizeKpiPoints(value: unknown, prefix = 'kpi'): KpiPoint[] {
+  if (!Array.isArray(value)) return defaultKpiPoints(prefix)
+  const points = value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const point = item as Partial<KpiPoint>
+    if (!Number.isFinite(point.value) || !Number.isFinite(point.completion)) return []
+    return [
+      {
+        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        value: point.value as number,
+        completion: point.completion as number,
+      },
+    ]
+  })
+  return points.length >= 2 ? points : defaultKpiPoints(prefix)
+}
+
+export function normalizeCatalogKpi(value: unknown): CatalogKpi | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Partial<CatalogKpi>
+  if (typeof item.id !== 'string' || !item.id) return null
+  return {
+    id: item.id,
+    name: typeof item.name === 'string' ? item.name : '',
+    unit: typeof item.unit === 'string' ? item.unit : '',
+    fact: Number.isFinite(item.fact) ? (item.fact as number) : 0,
+    points: normalizeKpiPoints(item.points, item.id),
+  }
 }
 
 export function defaultStandardPoints(): ScalePoint[] {
@@ -126,14 +198,21 @@ function sortedPoints(points: ScalePoint[]) {
     .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id))
 }
 
-export function completionOf(indicator: Indicator): number {
-  if (indicator.type === 'kpi') return kpiCompletion(indicator)
+export function findCatalogKpi(catalog: CatalogKpi[], catalogId: string) {
+  return catalog.find((item) => item.id === catalogId) ?? null
+}
+
+export function completionOf(indicator: Indicator, catalog: CatalogKpi[] = []): number {
+  if (indicator.type === 'kpi') {
+    const shared = findCatalogKpi(catalog, indicator.catalogId)
+    return shared ? kpiCompletionOf(shared) : 0
+  }
   if (indicator.type === 'smart') return smartCompletion(indicator.status)
   return completionOnScale(indicator.score, indicator.points ?? [])
 }
 
-export function weightedOf(indicator: Indicator): number {
-  return completionOf(indicator) * (indicator.weight / 100)
+export function weightedOf(indicator: Indicator, catalog: CatalogKpi[] = []): number {
+  return completionOf(indicator, catalog) * (indicator.weight / 100)
 }
 
 export interface MatrixResult {
@@ -142,12 +221,12 @@ export interface MatrixResult {
   byType: Record<Indicator['type'], number>
 }
 
-export function matrixResult(indicators: Indicator[]): MatrixResult {
+export function matrixResult(indicators: Indicator[], catalog: CatalogKpi[] = []): MatrixResult {
   const byType: MatrixResult['byType'] = { kpi: 0, smart: 0, standard: 0 }
   let kr = 0
   let weightSum = 0
   for (const indicator of indicators) {
-    const weighted = weightedOf(indicator)
+    const weighted = weightedOf(indicator, catalog)
     kr += weighted
     weightSum += indicator.weight
     byType[indicator.type] += weighted
@@ -155,7 +234,7 @@ export function matrixResult(indicators: Indicator[]): MatrixResult {
   return { kr, weightSum, byType }
 }
 
-export function scaleOrderIssue(indicator: KpiIndicator): string | null {
+export function scaleOrderIssue(indicator: KpiScale): string | null {
   if (!indicator.inverse) {
     if (indicator.threshold < indicator.plan && indicator.plan < indicator.maximum) return null
     return 'Для прямого KPI нужен порядок: порог < план < максимум.'
@@ -164,34 +243,14 @@ export function scaleOrderIssue(indicator: KpiIndicator): string | null {
   return 'Для обратного KPI нужен порядок: порог > план > максимум.'
 }
 
-export function explainKpi(indicator: KpiIndicator): string {
-  const completion = kpiCompletion(indicator)
-  const cap = Number.isFinite(indicator.maxCap) ? indicator.maxCap : DEFAULT_MAX_CAP
-  if (nearlyEqual(indicator.fact, indicator.plan)) {
-    return 'Факт совпал с планом, поэтому выполнение равно 100%.'
-  }
-  if (!indicator.inverse) {
-    if (indicator.fact < indicator.threshold) {
-      return 'Факт ниже порога. Выполнение этого KPI обнуляется.'
-    }
-    if (indicator.fact < indicator.plan) {
-      return `Факт между порогом и планом. Шкала линейно поднимает выполнение от 0% до 100%. Сейчас ${roundLabel(completion)}.`
-    }
-    if (indicator.fact >= indicator.maximum) {
-      return `Факт достиг максимума шкалы. Выполнение ограничено потолком ${roundLabel(cap)}.`
-    }
-    return `Факт между планом и максимумом. Выполнение растёт от 100% до ${roundLabel(cap)}. Сейчас ${roundLabel(completion)}.`
-  }
-  if (indicator.fact > indicator.threshold) {
-    return 'Факт хуже порога. Для обратного показателя выполнение обнуляется.'
-  }
-  if (indicator.fact > indicator.plan) {
-    return `Факт между планом и порогом. У обратного показателя здесь шкала от 100% к 0%. Сейчас ${roundLabel(completion)}.`
-  }
-  if (indicator.fact <= indicator.maximum) {
-    return `Факт достиг лучшей точки шкалы. Выполнение ограничено потолком ${roundLabel(cap)}.`
-  }
-  return `Факт лучше плана, но ещё не дошёл до максимума. Выполнение растёт от 100% до ${roundLabel(cap)}. Сейчас ${roundLabel(completion)}.`
+export function explainKpi(kpi: CatalogKpi): string {
+  const completion = roundLabel(kpiCompletionOf(kpi))
+  const exact = kpi.points.some((point) => nearlyEqual(point.value, kpi.fact))
+  const plan = planPoint(kpi.points)
+  const unit = kpi.unit ? ` ${kpi.unit}` : ''
+  const planText = plan ? ` План — ${formatNumber(plan.value)}${unit}.` : ''
+  const where = exact ? 'Факт стоит на точке шкалы.' : 'Факт между точками шкалы.'
+  return `${where} Выполнение — ${completion}.${planText}`
 }
 
 function roundLabel(value: number) {
@@ -230,27 +289,23 @@ function formatScoreLabel(score: number) {
   return '0'
 }
 
-export function scaleSeries(indicator: KpiIndicator, steps = 48) {
-  const anchors = [indicator.threshold, indicator.plan, indicator.maximum, indicator.fact]
-  const low = Math.min(...anchors)
-  const high = Math.max(...anchors)
-  const span = high - low || Math.max(Math.abs(indicator.plan), 1)
-  const start = low - span * 0.15
-  const end = high + span * 0.15
-  const points: { fact: number; completion: number; marker: boolean }[] = []
-  for (let index = 0; index <= steps; index += 1) {
-    const fact = start + ((end - start) * index) / steps
+export function kpiSeries(kpi: CatalogKpi) {
+  const points = kpi.points
+    .filter((point) => Number.isFinite(point.value) && Number.isFinite(point.completion))
+    .slice()
+    .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id))
+    .map((point) => ({
+      value: point.value,
+      completion: point.completion,
+      marker: nearlyEqual(point.value, kpi.fact),
+    }))
+  if (!points.some((point) => point.marker)) {
     points.push({
-      fact,
-      completion: kpiCompletion({ ...indicator, fact }),
-      marker: false,
+      value: kpi.fact,
+      completion: kpiCompletionOf(kpi),
+      marker: true,
     })
+    points.sort((a, b) => a.value - b.value || Number(a.marker) - Number(b.marker))
   }
-  points.push({
-    fact: indicator.fact,
-    completion: kpiCompletion(indicator),
-    marker: true,
-  })
-  points.sort((a, b) => a.fact - b.fact || Number(a.marker) - Number(b.marker))
   return points
 }

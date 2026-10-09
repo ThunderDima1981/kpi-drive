@@ -3,23 +3,27 @@ import { ArrowLeft, ChartLine, Check, ListChecks, Pencil, Plus, ShieldCheck, Tar
 import { Button } from '@/components/ui/button'
 import { DecimalInput } from './decimal-input.tsx'
 import { IndicatorDialog } from './indicator-dialog.tsx'
+import { KpiAssignDialog, KpiWeightDialog } from './kpi-assign-dialog.tsx'
+import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
 import { KrGauge } from './kr-gauge.tsx'
-import { ScaleDialog, StandardScaleDialog } from './scale-dialog.tsx'
+import { StandardScaleDialog } from './scale-dialog.tsx'
 import {
   completionOf,
+  findCatalogKpi,
   matrixResult,
-  scaleOrderIssue,
+  planPoint,
   weightedOf,
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import { SMART_STATUS_LABEL } from '../lib/smart.ts'
-import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator } from '../types.ts'
+import type { CatalogKpi, Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator } from '../types.ts'
 
 export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack: () => void }) {
   const employees = useTeamStore((state) => state.employees)
+  const kpiCatalog = useTeamStore((state) => state.kpiCatalog)
   const periodLabel = useTeamStore((state) => state.periodLabel)
-  const setFact = useTeamStore((state) => state.setFact)
+  const setCatalogFact = useTeamStore((state) => state.setCatalogFact)
   const setStatus = useTeamStore((state) => state.setStatus)
   const setScore = useTeamStore((state) => state.setScore)
   const setEvaluator = useTeamStore((state) => state.setEvaluator)
@@ -27,6 +31,8 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const employee = employees.find((item) => item.id === employeeId)
   const [editor, setEditor] = useState<{ indicator: Indicator | null; type: IndicatorType } | null>(null)
   const [chartId, setChartId] = useState<string | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [weightEdit, setWeightEdit] = useState<KpiIndicator | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   if (!employee) {
@@ -41,7 +47,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     )
   }
 
-  const result = matrixResult(employee.indicators)
+  const result = matrixResult(employee.indicators, kpiCatalog)
   const zone = ZONES[zoneOf(result.kr)]
   const balanced = Math.abs(result.weightSum - 100) < 0.05
   const chart = employee.indicators.find((indicator) => indicator.id === chartId) ?? null
@@ -49,7 +55,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'kpi',
       title: 'Количественные KPI',
-      hint: 'Факт пересчитывает выполнение сразу. Ниже порога — 0%, план — 100%, потолок по умолчанию — 130%.',
+      hint: 'Показатель выбирается из общего справочника. План, факт и точки шкалы одни на всех, в матрице задаётся вес.',
       icon: Target,
     },
     {
@@ -124,9 +130,15 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
                   <p className="mt-1 max-w-2xl text-sm text-ink-soft">{group.hint}</p>
                 </div>
               </div>
-              <Button type="button" variant="outline" onClick={() => setEditor({ indicator: null, type: group.type })}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  group.type === 'kpi' ? setAssignOpen(true) : setEditor({ indicator: null, type: group.type })
+                }
+              >
                 <Plus />
-                {group.type === 'smart' ? 'Создать' : 'Показатель'}
+                {group.type === 'smart' ? 'Создать' : group.type === 'kpi' ? 'Из справочника' : 'Показатель'}
               </Button>
             </header>
             {items.length === 0 ? (
@@ -134,11 +146,11 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
             ) : group.type === 'kpi' ? (
               <KpiTable
                 items={items.filter((item): item is KpiIndicator => item.type === 'kpi')}
-                employeeId={employee.id}
+                catalog={kpiCatalog}
                 pendingDelete={pendingDelete}
-                onFact={(id, fact) => setFact(employee.id, id, fact)}
+                onFact={setCatalogFact}
                 onChart={setChartId}
-                onEdit={(indicator) => setEditor({ indicator, type: 'kpi' })}
+                onEdit={setWeightEdit}
                 onAskDelete={setPendingDelete}
                 onDelete={(id) => {
                   removeIndicator(employee.id, id)
@@ -187,7 +199,13 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
           }}
         />
       ) : null}
-      <ScaleDialog indicator={chart?.type === 'kpi' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
+      <KpiAssignDialog employeeId={employee.id} open={assignOpen} onOpenChange={setAssignOpen} />
+      <KpiWeightDialog employeeId={employee.id} indicator={weightEdit} onOpenChange={(open) => { if (!open) setWeightEdit(null) }} />
+      <KpiScaleDialog
+        kpi={chart?.type === 'kpi' ? findCatalogKpi(kpiCatalog, chart.catalogId) : null}
+        weight={chart?.type === 'kpi' ? chart.weight : undefined}
+        onOpenChange={(open) => { if (!open) setChartId(null) }}
+      />
       <StandardScaleDialog employeeId={employee.id} indicator={chart?.type === 'standard' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
     </div>
   )
@@ -195,7 +213,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
 
 function KpiTable({
   items,
-  employeeId,
+  catalog,
   pendingDelete,
   onFact,
   onChart,
@@ -204,7 +222,7 @@ function KpiTable({
   onDelete,
 }: {
   items: KpiIndicator[]
-  employeeId: string
+  catalog: CatalogKpi[]
   pendingDelete: string | null
   onFact: (id: string, fact: number) => void
   onChart: (id: string) => void
@@ -214,14 +232,12 @@ function KpiTable({
 }) {
   return (
     <div className="overflow-x-auto border-t border-line">
-      <table className="w-full min-w-[980px] border-collapse text-sm">
+      <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead className="bg-[#f7f3ea] text-left text-xs tracking-wide text-ink-soft uppercase">
           <tr>
             <th className="sticky left-0 z-10 bg-[#f7f3ea] px-4 py-3 font-medium">Название</th>
             <th className="px-3 py-3 font-medium">Вес</th>
-            <th className="px-3 py-3 font-medium">Порог</th>
             <th className="px-3 py-3 font-medium">План</th>
-            <th className="px-3 py-3 font-medium">Максимум</th>
             <th className="bg-pine/5 px-3 py-3 font-medium">Факт</th>
             <th className="px-3 py-3 font-medium">% выполнения</th>
             <th className="px-3 py-3 font-medium">Взвешенный</th>
@@ -230,37 +246,42 @@ function KpiTable({
         </thead>
         <tbody>
           {items.map((indicator) => {
-            const issue = scaleOrderIssue(indicator)
+            const shared = findCatalogKpi(catalog, indicator.catalogId)
+            const plan = shared ? planPoint(shared.points) : null
+            const name = shared?.name ?? 'Показатель удалён из справочника'
             return (
               <tr key={indicator.id} className="border-t border-line align-top">
                 <th className="sticky left-0 z-10 bg-card px-4 py-3 text-left font-medium shadow-[4px_0_8px_-6px_rgba(23,32,51,0.35)]">
-                  <span className="block">{indicator.name}</span>
-                  {indicator.inverse ? <span className="mt-1 block text-xs font-normal text-ink-soft">Обратный</span> : null}
-                  {issue ? <span className="mt-1 block text-xs font-normal text-destructive">{issue}</span> : null}
+                  <span className="block">{name}</span>
+                  <span className="mt-1 block text-xs font-normal text-ink-soft">Общий показатель</span>
                 </th>
                 <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
-                <td className="px-3 py-3"><Quantity value={indicator.threshold} unit={indicator.unit} /></td>
-                <td className="px-3 py-3"><Quantity value={indicator.plan} unit={indicator.unit} /></td>
-                <td className="px-3 py-3"><Quantity value={indicator.maximum} unit={indicator.unit} /></td>
-                <td className="bg-pine/5 px-3 py-3">
-                  <div className="flex items-center gap-2">
-                    <DecimalInput
-                      key={`${employeeId}-${indicator.id}`}
-                      value={indicator.fact}
-                      ariaLabel={`Факт: ${indicator.name}`}
-                      onValueChange={(fact) => onFact(indicator.id, fact)}
-                      className="h-8 w-24 bg-white tabular-nums"
-                    />
-                    {indicator.unit ? <span className="text-xs text-ink-soft">{indicator.unit}</span> : null}
-                  </div>
+                <td className="px-3 py-3">
+                  {plan && shared ? <Quantity value={plan.value} unit={shared.unit} /> : '—'}
                 </td>
-                <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator))}</td>
-                <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator))}</td>
+                <td className="bg-pine/5 px-3 py-3">
+                  {shared ? (
+                    <div className="flex items-center gap-2">
+                      <DecimalInput
+                        key={shared.id}
+                        value={shared.fact}
+                        ariaLabel={`Факт: ${shared.name}`}
+                        onValueChange={(fact) => onFact(shared.id, fact)}
+                        className="h-8 w-24 bg-white tabular-nums"
+                      />
+                      {shared.unit ? <span className="text-xs text-ink-soft">{shared.unit}</span> : null}
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator, catalog))}</td>
+                <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator, catalog))}</td>
                 <td className="px-3 py-3">
                   <RowActions
-                    name={indicator.name}
+                    name={name}
                     pending={pendingDelete === indicator.id}
-                    onChart={() => onChart(indicator.id)}
+                    onChart={shared ? () => onChart(indicator.id) : undefined}
                     onEdit={() => onEdit(indicator)}
                     onAskDelete={() => onAskDelete(indicator.id)}
                     onCancel={() => onAskDelete(null)}

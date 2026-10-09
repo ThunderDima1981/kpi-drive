@@ -2,18 +2,25 @@ export type IndicatorType = 'kpi' | 'smart' | 'standard'
 
 export type StandardScore = -2 | -1 | 0 | 1 | 2
 
+export interface KpiPoint {
+  id: string
+  value: number
+  completion: number
+}
+
+export interface CatalogKpi {
+  id: string
+  name: string
+  unit: string
+  fact: number
+  points: KpiPoint[]
+}
+
 export interface KpiIndicator {
   id: string
   type: 'kpi'
-  name: string
+  catalogId: string
   weight: number
-  threshold: number
-  plan: number
-  maximum: number
-  fact: number
-  inverse: boolean
-  maxCap: number
-  unit: string
 }
 
 export type SmartStatus = 'created' | 'in_progress' | 'done' | 'closed'
@@ -64,4 +71,5 @@ export interface Employee {
 export interface TeamData {
   periodLabel: string
   employees: Employee[]
+  kpiCatalog: CatalogKpi[]
 }

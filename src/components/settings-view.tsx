@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { KpiCatalogSection } from './kpi-catalog.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { initials } from '../lib/format.ts'
@@ -86,6 +87,8 @@ export function SettingsView() {
           </div>
         )}
       </section>
+
+      <KpiCatalogSection />
 
       <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
         <h2 className="font-semibold">Демонстрационные данные</h2>

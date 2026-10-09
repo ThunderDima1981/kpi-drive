@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
-import { normalizeEvaluatorId, normalizeStandard } from '../lib/calc.ts'
+import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, DEFAULT_MAX_CAP } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
 import { normalizeIndicator } from '../lib/smart.ts'
-import type { Employee, Indicator, SmartComment, SmartStatus, TeamData } from '../types.ts'
+import type { CatalogKpi, Employee, Indicator, KpiIndicator, SmartComment, SmartStatus, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
   setPeriodLabel: (periodLabel: string) => void
@@ -15,7 +15,11 @@ interface TeamState extends TeamData {
   addIndicator: (employeeId: string, indicator: Indicator) => void
   updateIndicator: (employeeId: string, indicator: Indicator) => void
   removeIndicator: (employeeId: string, indicatorId: string) => void
-  setFact: (employeeId: string, indicatorId: string, fact: number) => void
+  addCatalogKpi: (kpi: CatalogKpi) => void
+  updateCatalogKpi: (kpi: CatalogKpi) => void
+  removeCatalogKpi: (id: string) => void
+  setCatalogFact: (id: string, fact: number) => void
+  assignKpi: (employeeId: string, catalogId: string, weight: number) => void
   setStatus: (employeeId: string, indicatorId: string, status: SmartStatus) => void
   addComment: (employeeId: string, indicatorId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: number) => void
@@ -67,10 +71,75 @@ function normalizeTeam(persisted: unknown): TeamData {
       ]
     }),
   )
+  const catalog = new Map<string, CatalogKpi>()
+  if (Array.isArray(data?.kpiCatalog)) {
+    for (const item of data.kpiCatalog) {
+      const normalized = normalizeCatalogKpi(item)
+      if (normalized) catalog.set(normalized.id, normalized)
+    }
+  }
+  const withCatalog = employees.map((employee) => ({
+    ...employee,
+    indicators: employee.indicators.flatMap((indicator) => adoptKpi(indicator, catalog)),
+  }))
+  const known = new Set(catalog.keys())
   return {
     periodLabel: typeof data?.periodLabel === 'string' ? data.periodLabel : '',
-    employees,
+    employees: withCatalog.map((employee) => ({
+      ...employee,
+      indicators: employee.indicators.filter(
+        (indicator) => indicator.type !== 'kpi' || known.has(indicator.catalogId),
+      ),
+    })),
+    kpiCatalog: [...catalog.values()],
   }
+}
+
+function adoptKpi(indicator: Indicator, catalog: Map<string, CatalogKpi>): Indicator[] {
+  if (indicator.type !== 'kpi') return [indicator]
+  const raw = indicator as KpiIndicator & {
+    threshold?: unknown
+    plan?: unknown
+    maximum?: unknown
+    fact?: unknown
+    inverse?: unknown
+    maxCap?: unknown
+    name?: unknown
+    unit?: unknown
+  }
+  const legacyThreshold = Number(raw.threshold)
+  const legacyPlan = Number(raw.plan)
+  const legacyMaximum = Number(raw.maximum)
+  const legacyFact = Number(raw.fact)
+  const isLegacy = [legacyThreshold, legacyPlan, legacyMaximum, legacyFact].every(Number.isFinite)
+  if (isLegacy) {
+    const id = indicator.id
+    if (!catalog.has(id)) {
+      catalog.set(id, {
+        id,
+        name: typeof raw.name === 'string' ? raw.name : '',
+        unit: typeof raw.unit === 'string' ? raw.unit : '',
+        fact: legacyFact,
+        points: pointsFromLegacyScale(id, {
+          threshold: legacyThreshold,
+          plan: legacyPlan,
+          maximum: legacyMaximum,
+          fact: legacyFact,
+          inverse: raw.inverse === true,
+          maxCap: Number.isFinite(Number(raw.maxCap)) ? Number(raw.maxCap) : DEFAULT_MAX_CAP,
+        }),
+      })
+    }
+    return [{ id, type: 'kpi', catalogId: id, weight: finiteWeight(indicator.weight) }]
+  }
+  if (typeof raw.catalogId === 'string' && raw.catalogId) {
+    return [{ id: indicator.id, type: 'kpi', catalogId: raw.catalogId, weight: finiteWeight(indicator.weight) }]
+  }
+  return []
+}
+
+function finiteWeight(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 function mapIndicator(
@@ -97,6 +166,7 @@ export const useTeamStore = create<TeamState>()(
     (set) => ({
       periodLabel: seed.periodLabel,
       employees: seed.employees,
+      kpiCatalog: seed.kpiCatalog,
       setPeriodLabel: (periodLabel) => set({ periodLabel }),
       addEmployee: (name, position) => {
         const trimmedName = name.trim()
@@ -173,12 +243,47 @@ export const useTeamStore = create<TeamState>()(
               : employee,
           ),
         })),
-      setFact: (employeeId, indicatorId, fact) =>
+      addCatalogKpi: (kpi) =>
         set((state) => ({
-          employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
-            indicator.type === 'kpi' ? { ...indicator, fact } : indicator,
-          ),
+          kpiCatalog: state.kpiCatalog.some((item) => item.id === kpi.id)
+            ? state.kpiCatalog.map((item) => (item.id === kpi.id ? kpi : item))
+            : [...state.kpiCatalog, kpi],
         })),
+      updateCatalogKpi: (kpi) =>
+        set((state) => ({
+          kpiCatalog: state.kpiCatalog.map((item) => (item.id === kpi.id ? kpi : item)),
+        })),
+      removeCatalogKpi: (id) =>
+        set((state) => ({
+          kpiCatalog: state.kpiCatalog.filter((item) => item.id !== id),
+          employees: state.employees.map((employee) => ({
+            ...employee,
+            indicators: employee.indicators.filter(
+              (indicator) => !(indicator.type === 'kpi' && indicator.catalogId === id),
+            ),
+          })),
+        })),
+      setCatalogFact: (id, fact) =>
+        set((state) => ({
+          kpiCatalog: state.kpiCatalog.map((item) => (item.id === id ? { ...item, fact } : item)),
+        })),
+      assignKpi: (employeeId, catalogId, weight) =>
+        set((state) => {
+          if (!state.kpiCatalog.some((item) => item.id === catalogId)) return state
+          if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return state
+          return {
+            employees: state.employees.map((employee) => {
+              if (employee.id !== employeeId) return employee
+              if (employee.indicators.some((indicator) => indicator.type === 'kpi' && indicator.catalogId === catalogId)) {
+                return employee
+              }
+              return {
+                ...employee,
+                indicators: [...employee.indicators, { id: uid(), type: 'kpi', catalogId, weight }],
+              }
+            }),
+          }
+        }),
       setStatus: (employeeId, indicatorId, status) =>
         set((state) => ({
           employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
@@ -208,7 +313,7 @@ export const useTeamStore = create<TeamState>()(
         }),
       resetDemo: () => {
         const next = createSeed()
-        set({ periodLabel: next.periodLabel, employees: next.employees })
+        set({ periodLabel: next.periodLabel, employees: next.employees, kpiCatalog: next.kpiCatalog })
       },
     }),
     {
@@ -217,6 +322,7 @@ export const useTeamStore = create<TeamState>()(
       partialize: (state) => ({
         periodLabel: state.periodLabel,
         employees: state.employees,
+        kpiCatalog: state.kpiCatalog,
       }),
       migrate: (persisted) => normalizeTeam(persisted),
       merge: (persisted, current) => {
@@ -226,6 +332,8 @@ export const useTeamStore = create<TeamState>()(
           ...current,
           periodLabel: typeof raw?.periodLabel === 'string' ? raw.periodLabel : current.periodLabel,
           employees: Array.isArray(raw?.employees) ? data.employees : current.employees,
+          kpiCatalog:
+            Array.isArray(raw?.kpiCatalog) || Array.isArray(raw?.employees) ? data.kpiCatalog : current.kpiCatalog,
         }
       },
     },
