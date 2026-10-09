@@ -15,12 +15,13 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { DEFAULT_MAX_CAP, scaleOrderIssue } from '../lib/calc.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
+import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
 import { useTeamStore } from '../store/team-store.ts'
-import type { Indicator, IndicatorType, KpiIndicator, StandardScore } from '../types.ts'
+import type { Indicator, IndicatorType, KpiIndicator, SmartComment, SmartStatus, StandardScore } from '../types.ts'
 
 const TYPE_OPTIONS: { id: IndicatorType; label: string; hint: string }[] = [
   { id: 'kpi', label: 'Количественный KPI', hint: 'Порог, план и максимум' },
-  { id: 'smart', label: 'Smart-задача', hint: 'Прогресс от 0 до 100%' },
+  { id: 'smart', label: 'Smart-задача', hint: 'Статус вместо прогресса' },
   { id: 'standard', label: 'Стандарт', hint: 'Оценка от −2 до +2' },
 ]
 
@@ -37,7 +38,10 @@ interface Draft {
   inverse: boolean
   maxCap: string
   unit: string
-  progress: string
+  detail: string
+  criterion: string
+  status: SmartStatus
+  comments: SmartComment[]
   score: StandardScore
 }
 
@@ -53,7 +57,10 @@ function emptyDraft(type: IndicatorType): Draft {
     inverse: false,
     maxCap: String(DEFAULT_MAX_CAP),
     unit: '',
-    progress: '0',
+    detail: '',
+    criterion: '',
+    status: 'created',
+    comments: [],
     score: 0,
   }
 }
@@ -71,7 +78,10 @@ function draftFrom(indicator: Indicator): Draft {
       inverse: indicator.inverse,
       maxCap: String(indicator.maxCap),
       unit: indicator.unit,
-      progress: '0',
+      detail: '',
+      criterion: '',
+      status: 'created',
+      comments: [],
       score: 0,
     }
   }
@@ -80,7 +90,10 @@ function draftFrom(indicator: Indicator): Draft {
       ...emptyDraft('smart'),
       name: indicator.name,
       weight: String(indicator.weight),
-      progress: String(indicator.progress),
+      detail: indicator.detail,
+      criterion: indicator.criterion,
+      status: indicator.status,
+      comments: indicator.comments,
     }
   }
   return {
@@ -106,9 +119,13 @@ export function IndicatorDialog({
   const addIndicator = useTeamStore((state) => state.addIndicator)
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
   const removeIndicator = useTeamStore((state) => state.removeIndicator)
+  const addComment = useTeamStore((state) => state.addComment)
   const [draft, setDraft] = useState<Draft>(() => (initial ? draftFrom(initial) : emptyDraft(defaultType)))
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [commentText, setCommentText] = useState('')
+  const [commentError, setCommentError] = useState('')
 
+  const smartOnly = initial?.type === 'smart' || (!initial && defaultType === 'smart')
   const employee = employees.find((item) => item.id === employeeId)
   const parsedWeight = parseNumber(draft.weight)
   const otherWeight =
@@ -165,18 +182,16 @@ export function IndicatorDialog({
         if (order) nextErrors.scale = order
         else indicator = candidate
       }
-    } else if (draft.type === 'smart') {
-      const progress = parseNumber(draft.progress)
-      if (progress === null || progress < 0 || progress > 100) {
-        nextErrors.progress = 'Прогресс — число от 0 до 100.'
-      } else if (weight !== null) {
-        indicator = {
-          id: initial?.id ?? crypto.randomUUID(),
-          type: 'smart',
-          name,
-          weight,
-          progress,
-        }
+    } else if (draft.type === 'smart' && weight !== null) {
+      indicator = {
+        id: initial?.id ?? crypto.randomUUID(),
+        type: 'smart',
+        name,
+        weight,
+        detail: draft.detail.trim(),
+        criterion: draft.criterion.trim(),
+        status: draft.status,
+        comments: draft.comments,
       }
     } else if (weight !== null) {
       indicator = {
@@ -200,17 +215,20 @@ export function IndicatorDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(90vh,760px)] overflow-y-auto sm:max-w-lg">
-        <form onSubmit={save}>
-          <DialogHeader>
-            <DialogTitle>{initial ? 'Показатель матрицы' : 'Новый показатель'}</DialogTitle>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <form className="flex max-h-[min(92vh,860px)] min-h-0 flex-col" onSubmit={save}>
+          <DialogHeader className="px-4 pt-4 pr-12">
+            <DialogTitle>
+              {smartOnly ? (initial ? 'Smart-задача' : 'Новая smart-задача') : initial ? 'Показатель матрицы' : 'Новый показатель'}
+            </DialogTitle>
             <DialogDescription>
               Вес входит в сумму 100%. КР считается как выполнение, умноженное на вес.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 grid gap-4">
-            <div className="grid gap-2">
+          <div className="mt-4 grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4">
+            {smartOnly ? null : (
+            <div className="grid gap-2 sm:grid-cols-3">
               {TYPE_OPTIONS.map((option) => (
                 <button
                   key={option.id}
@@ -226,6 +244,7 @@ export function IndicatorDialog({
                 </button>
               ))}
             </div>
+            )}
 
             <Field label="Название" error={errors.name}>
               <Input
@@ -317,14 +336,32 @@ export function IndicatorDialog({
             ) : null}
 
             {draft.type === 'smart' ? (
-              <Field label="Прогресс, %" error={errors.progress}>
-                <Input
-                  inputMode="decimal"
-                  value={draft.progress}
-                  aria-invalid={Boolean(errors.progress)}
-                  onValueChange={(progress) => setDraft((current) => ({ ...current, progress }))}
-                />
-              </Field>
+              <SmartFields
+                draft={draft}
+                commentText={commentText}
+                commentError={commentError}
+                onDraft={setDraft}
+                onCommentText={(value) => {
+                  setCommentText(value)
+                  if (commentError) setCommentError('')
+                }}
+                onAddComment={() => {
+                  const text = commentText.trim()
+                  if (!text) {
+                    setCommentError('Напишите текст комментария.')
+                    return
+                  }
+                  const comment: SmartComment = {
+                    id: crypto.randomUUID(),
+                    text,
+                    createdAt: new Date().toISOString(),
+                  }
+                  setDraft((current) => ({ ...current, comments: [...current.comments, comment] }))
+                  if (initial?.type === 'smart') addComment(employeeId, initial.id, comment)
+                  setCommentText('')
+                  setCommentError('')
+                }}
+              />
             ) : null}
 
             {draft.type === 'standard' ? (
@@ -339,7 +376,7 @@ export function IndicatorDialog({
             ) : null}
           </div>
 
-          <DialogFooter className="mt-4 sm:justify-between">
+          <DialogFooter className="mx-0 mt-0 mb-0 shrink-0 sm:justify-between">
             {initial ? (
               <Button
                 type="button"
@@ -380,6 +417,105 @@ function Field({
       {children}
       {error ? <span className="text-xs font-normal text-destructive">{error}</span> : null}
     </Label>
+  )
+}
+
+function SmartFields({
+  draft,
+  commentText,
+  commentError,
+  onDraft,
+  onCommentText,
+  onAddComment,
+}: {
+  draft: Draft
+  commentText: string
+  commentError: string
+  onDraft: (update: (current: Draft) => Draft) => void
+  onCommentText: (value: string) => void
+  onAddComment: () => void
+}) {
+  return (
+    <>
+      <Field label="Подробный комментарий">
+        <TextArea
+          value={draft.detail}
+          aria-label="Подробный комментарий"
+          onChange={(event) => onDraft((current) => ({ ...current, detail: event.target.value }))}
+        />
+      </Field>
+      <Field label="Критерий оценки">
+        <TextArea
+          value={draft.criterion}
+          aria-label="Критерий оценки"
+          onChange={(event) => onDraft((current) => ({ ...current, criterion: event.target.value }))}
+        />
+      </Field>
+      <div>
+        <p className="mb-2 text-sm font-medium">Статус</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Статус smart-задачи">
+          {SMART_STATUSES.map((status) => {
+            const selected = draft.status === status
+            return (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onDraft((current) => ({ ...current, status }))}
+                className={cn(
+                  'h-9 rounded-lg border px-2 text-sm font-medium',
+                  selected ? 'border-pine bg-pine text-primary-foreground' : 'border-line hover:bg-muted',
+                )}
+              >
+                {SMART_STATUS_LABEL[status]}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">Закрыт — 100% выполнения. Создан, в работе и выполнен — 0%.</p>
+      </div>
+      <div className="rounded-xl border border-line px-3 py-3">
+        <p className="text-sm font-medium">Комментарии</p>
+        {draft.comments.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-soft">Комментариев пока нет.</p>
+        ) : (
+          <ul className="mt-3 grid gap-2">
+            {draft.comments.map((comment) => (
+              <li key={comment.id} className="rounded-lg bg-muted px-3 py-2">
+                <p className="text-xs text-ink-soft">{formatCommentDate(comment.createdAt)}</p>
+                <p className="mt-1 text-sm whitespace-pre-wrap">{comment.text}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <label className="mt-3 grid gap-1.5 text-sm font-medium">
+          Новый комментарий
+          <TextArea
+            value={commentText}
+            aria-label="Новый комментарий"
+            aria-invalid={Boolean(commentError)}
+            className="min-h-16"
+            onChange={(event) => onCommentText(event.target.value)}
+          />
+        </label>
+        {commentError ? <p className="mt-1 text-xs text-destructive">{commentError}</p> : null}
+        <Button type="button" variant="outline" className="mt-2" onClick={onAddComment}>
+          Добавить комментарий
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function TextArea({ className, ...props }: React.ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      className={cn(
+        'min-h-20 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+        className,
+      )}
+      {...props}
+    />
   )
 }
 

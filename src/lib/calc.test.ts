@@ -8,6 +8,7 @@ import {
   scaleOrderIssue,
   weightedOf,
 } from './calc.ts'
+import { normalizeIndicator, smartCompletion } from './smart.ts'
 import type { KpiIndicator } from '../types.ts'
 
 function leads(fact: number, extra: Partial<KpiIndicator> = {}): KpiIndicator {
@@ -77,12 +78,12 @@ describe('matrixResult', () => {
     expect(weightedOf(ivanov!.indicators[0]!)).toBe(32)
     expect(completionOf(ivanov!.indicators[1]!)).toBe(80)
     expect(weightedOf(ivanov!.indicators[1]!)).toBe(16)
-    expect(completionOf(ivanov!.indicators[2]!)).toBe(80)
-    expect(weightedOf(ivanov!.indicators[2]!)).toBe(24)
+    expect(completionOf(ivanov!.indicators[2]!)).toBe(0)
+    expect(weightedOf(ivanov!.indicators[2]!)).toBe(0)
     expect(completionOf(ivanov!.indicators[3]!)).toBe(100)
     expect(weightedOf(ivanov!.indicators[3]!)).toBe(10)
-    expect(result.kr).toBe(82)
-    expect(result.byType).toEqual({ kpi: 48, smart: 24, standard: 10 })
+    expect(result.kr).toBe(58)
+    expect(result.byType).toEqual({ kpi: 48, smart: 0, standard: 10 })
   })
 
   it('keeps every demo matrix at 100% weight', () => {
@@ -96,9 +97,37 @@ describe('matrixResult', () => {
       createSeed().employees.map((employee) => [employee.id, matrixResult(employee.indicators).kr]),
     )
     expect(results['emp-petrova']).toBeCloseTo(109.75)
-    expect(results['emp-sidorov']).toBeCloseTo(22.5)
-    expect(results['emp-kozlova']).toBeCloseTo(91.875)
+    expect(results['emp-sidorov']).toBeCloseTo(14.5)
+    expect(results['emp-kozlova']).toBeCloseTo(76.875)
     expect(results['emp-volkov']).toBeCloseTo(115.107142, 4)
+  })
+})
+
+describe('smart tasks', () => {
+  it('counts only a closed task as complete', () => {
+    expect(smartCompletion('closed')).toBe(100)
+    expect(smartCompletion('created')).toBe(0)
+    expect(smartCompletion('in_progress')).toBe(0)
+    expect(smartCompletion('done')).toBe(0)
+  })
+
+  it('turns a saved progress value into a status', () => {
+    const closed = normalizeIndicator({
+      id: 's',
+      type: 'smart',
+      name: 'Задача',
+      weight: 10,
+      progress: 100,
+    } as never)
+    const started = normalizeIndicator({
+      id: 's2',
+      type: 'smart',
+      name: 'Задача',
+      weight: 10,
+      progress: 80,
+    } as never)
+    expect(closed).toMatchObject({ status: 'closed', detail: '', comments: [] })
+    expect(started).toMatchObject({ status: 'in_progress' })
   })
 })
 

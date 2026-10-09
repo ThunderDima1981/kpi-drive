@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
-import type { Employee, Indicator, StandardScore, TeamData } from '../types.ts'
+import { normalizeIndicator } from '../lib/smart.ts'
+import type { Employee, Indicator, SmartComment, SmartStatus, StandardScore, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
   setPeriodLabel: (periodLabel: string) => void
@@ -12,13 +13,26 @@ interface TeamState extends TeamData {
   updateIndicator: (employeeId: string, indicator: Indicator) => void
   removeIndicator: (employeeId: string, indicatorId: string) => void
   setFact: (employeeId: string, indicatorId: string, fact: number) => void
-  setProgress: (employeeId: string, indicatorId: string, progress: number) => void
+  setStatus: (employeeId: string, indicatorId: string, status: SmartStatus) => void
+  addComment: (employeeId: string, indicatorId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: StandardScore) => void
   resetDemo: () => void
 }
 
 function uid() {
   return crypto.randomUUID()
+}
+
+function normalizeTeam(persisted: unknown): TeamData {
+  const data = persisted as Partial<TeamData> | undefined
+  const employees = Array.isArray(data?.employees) ? data.employees : []
+  return {
+    periodLabel: typeof data?.periodLabel === 'string' ? data.periodLabel : '',
+    employees: employees.map((employee) => ({
+      ...employee,
+      indicators: Array.isArray(employee.indicators) ? employee.indicators.map(normalizeIndicator) : [],
+    })),
+  }
 }
 
 function mapIndicator(
@@ -102,10 +116,16 @@ export const useTeamStore = create<TeamState>()(
             indicator.type === 'kpi' ? { ...indicator, fact } : indicator,
           ),
         })),
-      setProgress: (employeeId, indicatorId, progress) =>
+      setStatus: (employeeId, indicatorId, status) =>
         set((state) => ({
           employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
-            indicator.type === 'smart' ? { ...indicator, progress } : indicator,
+            indicator.type === 'smart' ? { ...indicator, status } : indicator,
+          ),
+        })),
+      addComment: (employeeId, indicatorId, comment) =>
+        set((state) => ({
+          employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
+            indicator.type === 'smart' ? { ...indicator, comments: [...indicator.comments, comment] } : indicator,
           ),
         })),
       setScore: (employeeId, indicatorId, score) =>
@@ -121,17 +141,19 @@ export const useTeamStore = create<TeamState>()(
     }),
     {
       name: 'kpi-drive-mbo',
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         periodLabel: state.periodLabel,
         employees: state.employees,
       }),
+      migrate: (persisted) => normalizeTeam(persisted),
       merge: (persisted, current) => {
-        const data = persisted as Partial<TeamData> | undefined
+        const raw = persisted as Partial<TeamData> | undefined
+        const data = normalizeTeam(persisted)
         return {
           ...current,
-          periodLabel: typeof data?.periodLabel === 'string' ? data.periodLabel : current.periodLabel,
-          employees: Array.isArray(data?.employees) ? data.employees : current.employees,
+          periodLabel: typeof raw?.periodLabel === 'string' ? raw.periodLabel : current.periodLabel,
+          employees: Array.isArray(raw?.employees) ? data.employees : current.employees,
         }
       },
     },

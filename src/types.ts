@@ -16,12 +16,23 @@ export interface KpiIndicator {
   unit: string
 }
 
+export type SmartStatus = 'created' | 'in_progress' | 'done' | 'closed'
+
+export interface SmartComment {
+  id: string
+  text: string
+  createdAt: string
+}
+
 export interface SmartIndicator {
   id: string
   type: 'smart'
   name: string
   weight: number
-  progress: number
+  detail: string
+  criterion: string
+  status: SmartStatus
+  comments: SmartComment[]
 }
 
 export interface StandardIndicator {

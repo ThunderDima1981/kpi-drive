@@ -6,7 +6,6 @@ import { IndicatorDialog, ScorePicker } from './indicator-dialog.tsx'
 import { KrGauge } from './kr-gauge.tsx'
 import { ScaleDialog } from './scale-dialog.tsx'
 import {
-  clampProgress,
   completionOf,
   matrixResult,
   scaleOrderIssue,
@@ -15,13 +14,14 @@ import {
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
-import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, StandardIndicator, StandardScore } from '../types.ts'
+import { SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
+import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator, StandardScore } from '../types.ts'
 
 export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack: () => void }) {
   const employees = useTeamStore((state) => state.employees)
   const periodLabel = useTeamStore((state) => state.periodLabel)
   const setFact = useTeamStore((state) => state.setFact)
-  const setProgress = useTeamStore((state) => state.setProgress)
+  const setStatus = useTeamStore((state) => state.setStatus)
   const setScore = useTeamStore((state) => state.setScore)
   const removeIndicator = useTeamStore((state) => state.removeIndicator)
   const employee = employees.find((item) => item.id === employeeId)
@@ -55,7 +55,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'smart',
       title: 'Smart-задачи',
-      hint: 'Процент выполнения равен оценке руководителя и не поднимается выше 100%.',
+      hint: 'Статус «Закрыт» даёт 100% выполнения. Создан, в работе и выполнен дают 0%.',
       icon: ListChecks,
     },
     {
@@ -126,7 +126,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
               </div>
               <Button type="button" variant="outline" onClick={() => setEditor({ indicator: null, type: group.type })}>
                 <Plus />
-                Показатель
+                {group.type === 'smart' ? 'Создать' : 'Показатель'}
               </Button>
             </header>
             {items.length === 0 ? (
@@ -149,7 +149,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
               <SmartTable
                 items={items.filter((item): item is SmartIndicator => item.type === 'smart')}
                 pendingDelete={pendingDelete}
-                onProgress={(id, progress) => setProgress(employee.id, id, progress)}
+                onStatus={(id, status) => setStatus(employee.id, id, status)}
                 onEdit={(indicator) => setEditor({ indicator, type: 'smart' })}
                 onAskDelete={setPendingDelete}
                 onDelete={(id) => {
@@ -275,14 +275,14 @@ function KpiTable({
 function SmartTable({
   items,
   pendingDelete,
-  onProgress,
+  onStatus,
   onEdit,
   onAskDelete,
   onDelete,
 }: {
   items: SmartIndicator[]
   pendingDelete: string | null
-  onProgress: (id: string, progress: number) => void
+  onStatus: (id: string, status: SmartStatus) => void
   onEdit: (indicator: SmartIndicator) => void
   onAskDelete: (id: string | null) => void
   onDelete: (id: string) => void
@@ -294,7 +294,7 @@ function SmartTable({
           <tr>
             <th className="px-4 py-3 font-medium">Название</th>
             <th className="px-3 py-3 font-medium">Вес</th>
-            <th className="px-3 py-3 font-medium">Прогресс</th>
+            <th className="px-3 py-3 font-medium">Статус</th>
             <th className="px-3 py-3 font-medium">% выполнения</th>
             <th className="px-3 py-3 font-medium">Взвешенный</th>
             <th className="px-3 py-3"><span className="sr-only">Действия</span></th>
@@ -303,27 +303,28 @@ function SmartTable({
         <tbody>
           {items.map((indicator) => (
             <tr key={indicator.id} className="border-t border-line">
-              <th className="px-4 py-3 text-left font-medium">{indicator.name}</th>
+              <th className="px-4 py-3 text-left font-medium">
+                <span className="block">{indicator.name}</span>
+                {indicator.comments.length > 0 ? (
+                  <span className="mt-1 block text-xs font-normal text-ink-soft">
+                    {commentLabel(indicator.comments.length)}
+                  </span>
+                ) : null}
+              </th>
               <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
               <td className="px-3 py-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={clampProgress(indicator.progress)}
-                    aria-label={`Прогресс: ${indicator.name}`}
-                    onChange={(event) => onProgress(indicator.id, Number(event.target.value))}
-                    className="h-1.5 w-28 accent-pine"
-                  />
-                  <DecimalInput
-                    value={indicator.progress}
-                    ariaLabel={`Процент прогресса: ${indicator.name}`}
-                    onValueChange={(progress) => onProgress(indicator.id, clampProgress(progress))}
-                    className="h-8 w-16 bg-white tabular-nums"
-                  />
-                </div>
+                <select
+                  aria-label={`Статус: ${indicator.name}`}
+                  value={indicator.status}
+                  onChange={(event) => onStatus(indicator.id, event.target.value as SmartStatus)}
+                  className="h-8 rounded-lg border border-line bg-white px-2 text-sm"
+                >
+                  {SMART_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {SMART_STATUS_LABEL[status]}
+                    </option>
+                  ))}
+                </select>
               </td>
               <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator))}</td>
               <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator))}</td>
@@ -400,6 +401,14 @@ function StandardTable({
       </table>
     </div>
   )
+}
+
+function commentLabel(count: number) {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return `${count} комментарий`
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} комментария`
+  return `${count} комментариев`
 }
 
 function Quantity({ value, unit }: { value: number; unit: string }) {

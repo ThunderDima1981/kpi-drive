@@ -1,3 +1,4 @@
+import { smartCompletion } from './smart.ts'
 import type { Indicator, KpiIndicator, StandardScore } from '../types.ts'
 
 export const DEFAULT_MAX_CAP = 130
@@ -53,14 +54,9 @@ export function kpiCompletion(input: KpiScale): number {
   return 100 + ((plan - fact) / span) * (cap - 100)
 }
 
-export function clampProgress(progress: number) {
-  if (!Number.isFinite(progress)) return 0
-  return Math.min(100, Math.max(0, progress))
-}
-
 export function completionOf(indicator: Indicator): number {
   if (indicator.type === 'kpi') return kpiCompletion(indicator)
-  if (indicator.type === 'smart') return clampProgress(indicator.progress)
+  if (indicator.type === 'smart') return smartCompletion(indicator.status)
   return STANDARD_COMPLETION[indicator.score] ?? 0
 }
 
