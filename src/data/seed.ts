@@ -45,6 +45,7 @@ export function createSeed(): TeamData {
       id: 'emp-ivanov',
       name: 'Иванов Иван',
       position: 'Директор по маркетингу',
+      managerId: null,
       indicators: [
         kpi('kpi-leads', 'Количество лидов', 40, 500, 1000, 1200, 900, 'шт'),
         kpi('kpi-cpl', 'CPL / Стоимость лида', 20, 400, 300, 250, 320, '₽', true),
@@ -76,6 +77,7 @@ export function createSeed(): TeamData {
       id: 'emp-petrova',
       name: 'Петрова Мария',
       position: 'Руководитель отдела продаж',
+      managerId: null,
       indicators: [
         kpi('kpi-revenue', 'Выручка', 50, 8, 12, 15, 13.2, 'млн ₽'),
         kpi('kpi-conversion', 'Конверсия сделок', 25, 15, 25, 35, 28, '%'),
@@ -107,6 +109,7 @@ export function createSeed(): TeamData {
       id: 'emp-sidorov',
       name: 'Сидоров Алексей',
       position: 'Аналитик',
+      managerId: 'emp-ivanov',
       indicators: [
         kpi('kpi-reports', 'Отчёты в срок', 40, 8, 12, 16, 7, 'шт'),
         kpi('kpi-accuracy', 'Точность прогноза', 30, 70, 90, 98, 75, '%'),
@@ -131,6 +134,7 @@ export function createSeed(): TeamData {
       id: 'emp-kozlova',
       name: 'Козлова Елена',
       position: 'HR-партнёр',
+      managerId: null,
       indicators: [
         kpi('kpi-vacancies', 'Закрытые вакансии', 35, 4, 8, 12, 8, 'шт'),
         kpi('kpi-turnover', 'Текучесть', 25, 18, 12, 8, 11, '%', true),
@@ -155,6 +159,7 @@ export function createSeed(): TeamData {
       id: 'emp-volkov',
       name: 'Волков Павел',
       position: 'Руководитель продукта',
+      managerId: null,
       indicators: [
         kpi('kpi-nps', 'NPS продукта', 30, 20, 40, 60, 55, 'п.'),
         kpi('kpi-release', 'Срок релиза', 30, 30, 21, 14, 18, 'дн.', true),

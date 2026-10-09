@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { OrgSearch, OrgToggle } from './org-toggle.tsx'
+import { useOrgList } from './use-org-list.ts'
 import { initials } from '../lib/format.ts'
+import { managerChoices, type OrgNode } from '../lib/org.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { Employee } from '../types.ts'
 
@@ -12,6 +15,7 @@ export function SettingsView() {
   const setPeriodLabel = useTeamStore((state) => state.setPeriodLabel)
   const addEmployee = useTeamStore((state) => state.addEmployee)
   const resetDemo = useTeamStore((state) => state.resetDemo)
+  const org = useOrgList(employees)
   const [name, setName] = useState('')
   const [position, setPosition] = useState('')
   const [error, setError] = useState('')
@@ -63,15 +67,23 @@ export function SettingsView() {
       </section>
 
       <section className="rounded-2xl border border-line bg-card shadow-sm">
-        <h2 className="px-5 pt-5 font-semibold">Состав</h2>
+        <div className="flex flex-col gap-3 px-5 pt-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-semibold">Состав</h2>
+            <p className="mt-1 text-sm text-ink-soft">Руководитель задаёт ветку. «+» раскрывает подчинённых.</p>
+          </div>
+          <div className="w-full sm:max-w-xs">
+            <OrgSearch value={org.query} onChange={org.setQuery} tone="light" />
+          </div>
+        </div>
         {employees.length === 0 ? (
           <p className="px-5 py-8 text-sm text-ink-soft">Список пуст. Добавьте первого сотрудника или верните демонстрационную команду.</p>
+        ) : org.nodes.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-ink-soft">Никого не нашли по этому запросу.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-line">
-            {employees.map((employee) => (
-              <EmployeeRow key={employee.id} employee={employee} />
-            ))}
-          </ul>
+          <div className="mt-3">
+            <SettingsBranches nodes={org.nodes} depth={0} open={org.open} employees={employees} onToggle={org.toggle} />
+          </div>
         )}
       </section>
 
@@ -108,9 +120,59 @@ export function SettingsView() {
   )
 }
 
-function EmployeeRow({ employee }: { employee: Employee }) {
+function SettingsBranches({
+  nodes,
+  depth,
+  open,
+  employees,
+  onToggle,
+}: {
+  nodes: OrgNode[]
+  depth: number
+  open: Set<string>
+  employees: Employee[]
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div>
+      {nodes.map((node) => {
+        const expanded = open.has(node.employee.id)
+        const hasChildren = node.children.length > 0
+        return (
+          <div key={node.employee.id} style={{ marginLeft: depth > 0 ? 20 : 0 }}>
+            <div className="flex items-start gap-2 border-t border-line px-5 py-4">
+              {hasChildren ? (
+                <div className="pt-2">
+                  <OrgToggle open={expanded} name={node.employee.name} tone="light" onClick={() => onToggle(node.employee.id)} />
+                </div>
+              ) : (
+                <span className="mt-2 size-6 shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <EmployeeRow employee={node.employee} employees={employees} />
+              </div>
+            </div>
+            {hasChildren && expanded ? (
+              <SettingsBranches
+                nodes={node.children}
+                depth={depth + 1}
+                open={open}
+                employees={employees}
+                onToggle={onToggle}
+              />
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EmployeeRow({ employee, employees }: { employee: Employee; employees: Employee[] }) {
   const updateEmployee = useTeamStore((state) => state.updateEmployee)
+  const setManager = useTeamStore((state) => state.setManager)
   const removeEmployee = useTeamStore((state) => state.removeEmployee)
+  const choices = managerChoices(employees, employee.id)
   const [name, setName] = useState(employee.name)
   const [position, setPosition] = useState(employee.position)
   const [source, setSource] = useState({ name: employee.name, position: employee.position })
@@ -134,10 +196,11 @@ function EmployeeRow({ employee }: { employee: Employee }) {
   }
 
   return (
-    <li className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold">
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold">
         {initials(name || employee.name)}
       </span>
+      <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
       <Label className="grid flex-1 gap-1">
         <span className="sr-only">ФИО</span>
         <Input value={name} aria-label={`ФИО: ${employee.name}`} onValueChange={setName} onBlur={commit} />
@@ -145,6 +208,22 @@ function EmployeeRow({ employee }: { employee: Employee }) {
       <Label className="grid flex-1 gap-1">
         <span className="sr-only">Должность</span>
         <Input value={position} aria-label={`Должность: ${employee.name}`} onValueChange={setPosition} onBlur={commit} />
+      </Label>
+      <Label className="grid min-w-40 flex-1 gap-1">
+        <span className="sr-only">Руководитель</span>
+        <select
+          aria-label={`Руководитель: ${employee.name}`}
+          value={employee.managerId ?? ''}
+          onChange={(event) => setManager(employee.id, event.target.value || null)}
+          className="h-9 w-full rounded-lg border border-input bg-white px-2 text-sm"
+        >
+          <option value="">Без руководителя</option>
+          {choices.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.name}
+            </option>
+          ))}
+        </select>
       </Label>
       {confirmDelete ? (
         <div className="flex gap-2">
@@ -160,6 +239,7 @@ function EmployeeRow({ employee }: { employee: Employee }) {
           Удалить
         </Button>
       )}
-    </li>
+      </div>
+    </div>
   )
 }

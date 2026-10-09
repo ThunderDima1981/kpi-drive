@@ -1,18 +1,23 @@
 import { ArrowUpRight } from 'lucide-react'
 import { TeamKrChart, ZoneChart } from './analytics-charts.tsx'
+import { OrgSearch, OrgToggle } from './org-toggle.tsx'
+import { useOrgList } from './use-org-list.ts'
 import { matrixResult } from '../lib/calc.ts'
 import { formatPercent, initials, peopleLabel, zoneOf, ZONES, type ZoneKey } from '../lib/format.ts'
+import type { OrgNode } from '../lib/org.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
 export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: (id: string) => void; onOpenSettings: () => void }) {
   const employees = useTeamStore((state) => state.employees)
   const periodLabel = useTeamStore((state) => state.periodLabel)
+  const org = useOrgList(employees)
   const rows = employees
     .map((employee) => {
       const result = matrixResult(employee.indicators)
       return { employee, ...result, zone: zoneOf(result.kr) }
     })
     .sort((a, b) => b.kr - a.kr)
+  const byId = new Map(rows.map((row) => [row.employee.id, row]))
 
   const counts: Record<ZoneKey, number> = { red: 0, amber: 0, green: 0 }
   for (const row of rows) counts[row.zone] += 1
@@ -66,60 +71,137 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
             </article>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-2">
-            {rows.map((row) => {
-              const zone = ZONES[row.zone]
-              return (
-                <button
-                  key={row.employee.id}
-                  type="button"
-                  onClick={() => onOpenEmployee(row.employee.id)}
-                  className="rounded-2xl border border-line bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-pine/40"
-                  style={{ boxShadow: `inset 0 3px 0 ${zone.color}` }}
-                  aria-label={`Открыть матрицу ${row.employee.name}, КР ${formatPercent(row.kr)}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="grid size-11 place-items-center rounded-full bg-muted text-sm font-semibold">
-                        {initials(row.employee.name)}
-                      </span>
-                      <span>
-                        <span className="block font-semibold">{row.employee.name}</span>
-                        <span className="block text-sm text-ink-soft">{row.employee.position}</span>
-                      </span>
-                    </div>
-                    <ArrowUpRight className="size-4 text-ink-soft" />
-                  </div>
-                  <div className="mt-5 flex items-end justify-between gap-3">
-                    <p className="font-display text-5xl leading-none tracking-tight" style={{ color: zone.color }}>
-                      {formatPercent(row.kr).replace('%', '')}
-                      <span className="ml-1 font-sans text-lg font-semibold">%</span>
-                    </p>
-                    <span
-                      className="rounded-full px-2.5 py-1 text-xs font-semibold"
-                      style={{ color: zone.color, background: zone.soft }}
-                    >
-                      {zone.label}
-                    </span>
-                  </div>
-                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div className="flex h-full">
-                      <span className="h-full bg-pine" style={{ width: `${(row.byType.kpi / 130) * 100}%` }} />
-                      <span className="h-full bg-gold" style={{ width: `${(row.byType.smart / 130) * 100}%` }} />
-                      <span className="h-full bg-ink-soft" style={{ width: `${(row.byType.standard / 130) * 100}%` }} />
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-ink-soft">
-                    KPI {formatPercent(row.byType.kpi)} · Задачи {formatPercent(row.byType.smart)} · Стандарты{' '}
-                    {formatPercent(row.byType.standard)}
-                  </p>
-                </button>
-              )
-            })}
+          <section className="grid gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold">Сотрудники</h2>
+                <p className="mt-1 text-sm text-ink-soft">Ветка открывается по «+». Поиск оставляет совпадения и их руководителей.</p>
+              </div>
+              <div className="w-full sm:max-w-xs">
+                <OrgSearch value={org.query} onChange={org.setQuery} tone="light" />
+              </div>
+            </div>
+            {org.nodes.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-line bg-card px-5 py-8 text-sm text-ink-soft">
+                Никого не нашли по этому запросу.
+              </p>
+            ) : (
+              <EmployeeBranches
+                nodes={org.nodes}
+                depth={0}
+                open={org.open}
+                byId={byId}
+                onToggle={org.toggle}
+                onOpen={onOpenEmployee}
+              />
+            )}
           </section>
         </>
       )}
     </div>
+  )
+}
+
+function EmployeeBranches({
+  nodes,
+  depth,
+  open,
+  byId,
+  onToggle,
+  onOpen,
+}: {
+  nodes: OrgNode[]
+  depth: number
+  open: Set<string>
+  byId: Map<string, { kr: number; zone: ZoneKey; byType: { kpi: number; smart: number; standard: number }; employee: { id: string; name: string; position: string } }>
+  onToggle: (id: string) => void
+  onOpen: (id: string) => void
+}) {
+  return (
+    <div className="grid gap-3">
+      {nodes.map((node) => {
+        const row = byId.get(node.employee.id)
+        if (!row) return null
+        const expanded = open.has(node.employee.id)
+        const hasChildren = node.children.length > 0
+        return (
+          <div key={node.employee.id} className="grid gap-3" style={{ marginLeft: depth > 0 ? 28 : 0 }}>
+            <div className="flex items-start gap-2">
+              {hasChildren ? (
+                <div className="pt-5">
+                  <OrgToggle open={expanded} name={node.employee.name} tone="light" onClick={() => onToggle(node.employee.id)} />
+                </div>
+              ) : (
+                <span className="mt-5 size-6 shrink-0" />
+              )}
+              <EmployeeCard row={row} onOpen={() => onOpen(node.employee.id)} />
+            </div>
+            {hasChildren && expanded ? (
+              <EmployeeBranches
+                nodes={node.children}
+                depth={depth + 1}
+                open={open}
+                byId={byId}
+                onToggle={onToggle}
+                onOpen={onOpen}
+              />
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EmployeeCard({
+  row,
+  onOpen,
+}: {
+  row: { kr: number; zone: ZoneKey; byType: { kpi: number; smart: number; standard: number }; employee: { id: string; name: string; position: string } }
+  onOpen: () => void
+}) {
+  const zone = ZONES[row.zone]
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="min-w-0 flex-1 rounded-2xl border border-line bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-pine/40"
+      style={{ boxShadow: `inset 0 3px 0 ${zone.color}` }}
+      aria-label={`Открыть матрицу ${row.employee.name}, КР ${formatPercent(row.kr)}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-11 place-items-center rounded-full bg-muted text-sm font-semibold">
+            {initials(row.employee.name)}
+          </span>
+          <span>
+            <span className="block font-semibold">{row.employee.name}</span>
+            <span className="block text-sm text-ink-soft">{row.employee.position}</span>
+          </span>
+        </div>
+        <ArrowUpRight className="size-4 text-ink-soft" />
+      </div>
+      <div className="mt-5 flex items-end justify-between gap-3">
+        <p className="font-display text-5xl leading-none tracking-tight" style={{ color: zone.color }}>
+          {formatPercent(row.kr).replace('%', '')}
+          <span className="ml-1 font-sans text-lg font-semibold">%</span>
+        </p>
+        <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ color: zone.color, background: zone.soft }}>
+          {zone.label}
+        </span>
+      </div>
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="flex h-full">
+          <span className="h-full bg-pine" style={{ width: `${(row.byType.kpi / 130) * 100}%` }} />
+          <span className="h-full bg-gold" style={{ width: `${(row.byType.smart / 130) * 100}%` }} />
+          <span className="h-full bg-ink-soft" style={{ width: `${(row.byType.standard / 130) * 100}%` }} />
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-ink-soft">
+        KPI {formatPercent(row.byType.kpi)} · Задачи {formatPercent(row.byType.smart)} · Стандарты{' '}
+        {formatPercent(row.byType.standard)}
+      </p>
+    </button>
   )
 }
 

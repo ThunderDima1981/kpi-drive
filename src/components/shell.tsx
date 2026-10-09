@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { LayoutDashboard, Menu, Settings, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { OrgSearch, OrgToggle } from './org-toggle.tsx'
+import { useOrgList } from './use-org-list.ts'
+import type { OrgNode } from '../lib/org.ts'
 import type { Route } from '../lib/routes.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
@@ -59,6 +62,7 @@ export function Shell({
 function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Route) => void }) {
   const employees = useTeamStore((state) => state.employees)
   const periodLabel = useTeamStore((state) => state.periodLabel)
+  const org = useOrgList(employees)
 
   return (
     <div className="flex h-full flex-col bg-ink text-[#f6f3ec]">
@@ -88,27 +92,23 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
         />
       </nav>
       <p className="mt-6 px-5 text-[11px] font-semibold tracking-[0.16em] text-white/45 uppercase">Матрицы</p>
+      <div className="mt-2 px-3">
+        <OrgSearch value={org.query} onChange={org.setQuery} tone="dark" />
+      </div>
       <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         {employees.length === 0 ? (
           <p className="px-2 py-2 text-sm text-white/50">Список пуст</p>
+        ) : org.nodes.length === 0 ? (
+          <p className="px-2 py-2 text-sm text-white/50">Никого не нашли</p>
         ) : (
-          employees.map((employee) => {
-            const active = route.name === 'matrix' && route.employeeId === employee.id
-            return (
-              <button
-                key={employee.id}
-                type="button"
-                onClick={() => onNavigate({ name: 'matrix', employeeId: employee.id })}
-                className={cn(
-                  'mb-1 w-full rounded-lg px-2 py-2 text-left',
-                  active ? 'bg-white/10' : 'hover:bg-white/5',
-                )}
-              >
-                <span className="block truncate text-sm font-medium">{employee.name}</span>
-                <span className="block truncate text-xs text-white/50">{employee.position}</span>
-              </button>
-            )
-          })
+          <SidebarBranches
+            nodes={org.nodes}
+            depth={0}
+            open={org.open}
+            route={route}
+            onToggle={org.toggle}
+            onNavigate={onNavigate}
+          />
         )}
       </div>
       <div className="border-t border-white/10 px-5 py-4">
@@ -116,6 +116,69 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
         <p className="mt-1 text-sm font-medium">{periodLabel || 'Не задан'}</p>
         <p className="mt-3 text-xs leading-relaxed text-white/45">Считается только КР. Оклады и премии не участвуют.</p>
       </div>
+    </div>
+  )
+}
+
+function SidebarBranches({
+  nodes,
+  depth,
+  open,
+  route,
+  onToggle,
+  onNavigate,
+}: {
+  nodes: OrgNode[]
+  depth: number
+  open: Set<string>
+  route: Route
+  onToggle: (id: string) => void
+  onNavigate: (route: Route) => void
+}) {
+  return (
+    <div className="grid gap-1">
+      {nodes.map((node) => {
+        const expanded = open.has(node.employee.id)
+        const hasChildren = node.children.length > 0
+        const active = route.name === 'matrix' && route.employeeId === node.employee.id
+        return (
+          <div key={node.employee.id} className="grid gap-1" style={{ marginLeft: depth > 0 ? 16 : 0 }}>
+            <div className="flex items-start gap-1">
+              {hasChildren ? (
+                <OrgToggle
+                  open={expanded}
+                  name={node.employee.name}
+                  tone="dark"
+                  onClick={() => onToggle(node.employee.id)}
+                />
+              ) : (
+                <span className="size-6 shrink-0" />
+              )}
+              <button
+                type="button"
+                onClick={() => onNavigate({ name: 'matrix', employeeId: node.employee.id })}
+                className={cn(
+                  'min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left',
+                  active ? 'bg-white/10' : 'hover:bg-white/5',
+                )}
+              >
+                <span className="block truncate text-sm font-medium">{node.employee.name}</span>
+                <span className="block truncate text-xs text-white/50">{node.employee.position}</span>
+              </button>
+            </div>
+            {hasChildren && expanded ? (
+              <SidebarBranches
+                nodes={node.children}
+                depth={depth + 1}
+                open={open}
+                route={route}
+                onToggle={onToggle}
+                onNavigate={onNavigate}
+              />
+            ) : null}
+          </div>
+        )
+      })}
     </div>
   )
 }
