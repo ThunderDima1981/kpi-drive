@@ -3,9 +3,11 @@ import { createSeed } from '../data/seed.ts'
 import {
   completionOf,
   explainKpi,
+  explainStandard,
   kpiCompletion,
   matrixResult,
   scaleOrderIssue,
+  standardSeries,
   weightedOf,
 } from './calc.ts'
 import { normalizeIndicator, smartCompletion } from './smart.ts'
@@ -139,5 +141,14 @@ describe('scale checks', () => {
 
   it('explains the Ivanov lead fact in plain language', () => {
     expect(explainKpi(leads(900))).toMatch(/порогом и планом/)
+  })
+})
+
+describe('standard scale', () => {
+  it('maps each score to a point on the completion line', () => {
+    expect(standardSeries(0).map((point) => point.completion)).toEqual([0, 70, 100, 115, 130])
+    expect(standardSeries(1).find((point) => point.marker)?.score).toBe(1)
+    expect(explainStandard(-1)).toMatch(/70%/)
+    expect(explainStandard(0)).toMatch(/100%/)
   })
 })

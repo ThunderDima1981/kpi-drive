@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { DecimalInput } from './decimal-input.tsx'
 import { IndicatorDialog, ScorePicker } from './indicator-dialog.tsx'
 import { KrGauge } from './kr-gauge.tsx'
-import { ScaleDialog } from './scale-dialog.tsx'
+import { ScaleDialog, StandardScaleDialog } from './scale-dialog.tsx'
 import {
   completionOf,
   matrixResult,
@@ -44,7 +44,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const result = matrixResult(employee.indicators)
   const zone = ZONES[zoneOf(result.kr)]
   const balanced = Math.abs(result.weightSum - 100) < 0.05
-  const chart = employee.indicators.find((indicator): indicator is KpiIndicator => indicator.id === chartId && indicator.type === 'kpi') ?? null
+  const chart = employee.indicators.find((indicator) => indicator.id === chartId) ?? null
   const groups: { type: IndicatorType; title: string; hint: string; icon: typeof Target }[] = [
     {
       type: 'kpi',
@@ -162,6 +162,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
                 items={items.filter((item): item is StandardIndicator => item.type === 'standard')}
                 pendingDelete={pendingDelete}
                 onScore={(id, score) => setScore(employee.id, id, score)}
+                onChart={setChartId}
                 onEdit={(indicator) => setEditor({ indicator, type: 'standard' })}
                 onAskDelete={setPendingDelete}
                 onDelete={(id) => {
@@ -184,7 +185,8 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
           }}
         />
       ) : null}
-      <ScaleDialog indicator={chart} onOpenChange={(open) => { if (!open) setChartId(null) }} />
+      <ScaleDialog indicator={chart?.type === 'kpi' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
+      <StandardScaleDialog indicator={chart?.type === 'standard' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
     </div>
   )
 }
@@ -370,6 +372,7 @@ function StandardTable({
   items,
   pendingDelete,
   onScore,
+  onChart,
   onEdit,
   onAskDelete,
   onDelete,
@@ -377,6 +380,7 @@ function StandardTable({
   items: StandardIndicator[]
   pendingDelete: string | null
   onScore: (id: string, score: StandardScore) => void
+  onChart: (id: string) => void
   onEdit: (indicator: StandardIndicator) => void
   onAskDelete: (id: string | null) => void
   onDelete: (id: string) => void
@@ -409,6 +413,7 @@ function StandardTable({
                 <RowActions
                   name={indicator.name}
                   pending={pendingDelete === indicator.id}
+                  onChart={() => onChart(indicator.id)}
                   onEdit={() => onEdit(indicator)}
                   onAskDelete={() => onAskDelete(indicator.id)}
                   onCancel={() => onAskDelete(null)}

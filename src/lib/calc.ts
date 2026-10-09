@@ -128,6 +128,24 @@ function roundLabel(value: number) {
   return `${text}%`
 }
 
+const STANDARD_SCORES: StandardScore[] = [-2, -1, 0, 1, 2]
+
+export function standardSeries(score: StandardScore) {
+  return STANDARD_SCORES.map((value) => ({
+    score: value,
+    completion: STANDARD_COMPLETION[value],
+    marker: value === score,
+  }))
+}
+
+export function explainStandard(score: StandardScore) {
+  if (score === 0) return 'Оценка совпала с планом, поэтому выполнение равно 100%.'
+  if (score === -2) return 'Оценка −2 на пороге шкалы. Выполнение стандарта — 0%.'
+  if (score === -1) return 'Оценка −1 между порогом и планом. Выполнение стандарта — 70%.'
+  if (score === 1) return 'Оценка +1 между планом и максимумом. Выполнение стандарта — 115%.'
+  return 'Оценка +2 на максимуме шкалы. Выполнение ограничено потолком 130%.'
+}
+
 export function scaleSeries(indicator: KpiIndicator, steps = 48) {
   const anchors = [indicator.threshold, indicator.plan, indicator.maximum, indicator.fact]
   const low = Math.min(...anchors)
