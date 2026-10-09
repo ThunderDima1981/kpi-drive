@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultStandardPoints } from './calc.ts'
 import { publishPeriods } from './period.ts'
 import { defaultSmartPoints } from './smart.ts'
-import { userChangeAllowed } from './access.ts'
+import { mergeUserTeam, userChangeAllowed, visibleTeam } from './access.ts'
 import type { SmartTask, TeamData } from '../types.ts'
 
 function task(status: SmartTask['status'], id = 'task'): SmartTask {
@@ -94,5 +94,28 @@ describe('user permissions', () => {
     existing.tasks[0]!.comments = [{ id: 'c1', text: 'Позже', createdAt: '2026-10-09T00:00:00.000Z' }]
     commented.periods[0]!.employees = commented.employees
     expect(userChangeAllowed(team(), commented)).toBe(false)
+  })
+
+  it('keeps hidden employees when a granted matrix changes', () => {
+    const stored = team()
+    const hidden = structuredClone(stored.employees[0]!)
+    hidden.id = 'hidden'
+    hidden.name = 'Скрытый'
+    stored.periods[0]!.employees = [...stored.employees, hidden]
+    stored.employees = stored.periods[0]!.employees
+    const allowed = new Set(['person'])
+    const incoming = structuredClone(visibleTeam(stored, allowed))
+    const smart = incoming.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (smart?.type !== 'smart') throw new Error('missing smart')
+    smart.tasks[0]!.status = 'done'
+    incoming.periods[0]!.employees = incoming.employees
+    const merged = mergeUserTeam(stored, incoming, allowed)
+    const savedPerson = merged?.saved.employees.find((item) => item.id === 'person')
+    const savedHidden = merged?.saved.employees.find((item) => item.id === 'hidden')
+    const personTask = savedPerson?.indicators.find((item) => item.type === 'smart')
+    const hiddenTask = savedHidden?.indicators.find((item) => item.type === 'smart')
+    expect(personTask?.type === 'smart' ? personTask.tasks[0]?.status : null).toBe('done')
+    expect(hiddenTask?.type === 'smart' ? hiddenTask.tasks[0]?.status : null).toBe('created')
+    expect(merged?.view.employees.map((item) => item.id)).toEqual(['person'])
   })
 })

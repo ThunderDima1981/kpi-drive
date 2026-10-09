@@ -28,10 +28,21 @@ export async function migrate() {
 
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin';
     UPDATE users SET role = 'admin' WHERE role IS NULL OR role NOT IN ('admin', 'user');
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id text;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS matrix_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS team_owner_id uuid;
   `)
   await pool.query(`
     DO $$ BEGIN
       ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'user'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `)
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users
+        ADD CONSTRAINT users_team_owner_fk
+        FOREIGN KEY (team_owner_id) REFERENCES users(id) ON DELETE SET NULL;
     EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
   `)

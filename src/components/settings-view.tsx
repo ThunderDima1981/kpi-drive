@@ -17,10 +17,12 @@ export function SettingsView({
   currentUserId,
   onAccountChange,
   onSelfRemoved,
+  onOpenEmployee,
 }: {
   currentUserId: string
   onAccountChange: (user: User) => void
   onSelfRemoved: () => void
+  onOpenEmployee: (employeeId: string) => void
 }) {
   const employees = useTeamStore((state) => state.employees)
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
@@ -95,7 +97,12 @@ export function SettingsView({
       </section>
 
       <KpiCatalogSection />
-      <UsersSection currentUserId={currentUserId} onAccountChange={onAccountChange} onSelfRemoved={onSelfRemoved} />
+      <UsersSection
+        currentUserId={currentUserId}
+        onAccountChange={onAccountChange}
+        onSelfRemoved={onSelfRemoved}
+        onOpenEmployee={onOpenEmployee}
+      />
     </div>
   )
 }

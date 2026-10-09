@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { isRole, userChangeAllowed } from '../src/lib/access.ts'
+import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
 import { emptyTeam } from '../src/lib/period.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
@@ -46,7 +46,7 @@ app.post('/api/auth/register', async (c) => {
   }
   await pool.query('INSERT INTO teams (user_id, document) VALUES ($1, $2::jsonb)', [id, JSON.stringify(emptyTeam())])
   await startSession(c, id)
-  return c.json({ user: { id, email, name, role: 'admin' as const } })
+  return c.json({ user: { id, email, name, role: 'admin' as const, employeeId: null, matrixIds: [] } })
 })
 
 app.post('/api/auth/login', async (c) => {
@@ -54,8 +54,8 @@ app.post('/api/auth/login', async (c) => {
   const email = emailOf(body)
   const password = typeof body?.password === 'string' ? body.password : ''
   if (!email || !password) return c.json({ error: 'Неверная почта или пароль.' }, 401)
-  const found = await pool.query<{ id: string; email: string; name: string; role: string; password_hash: string }>(
-    'SELECT id, email, name, role, password_hash FROM users WHERE email = $1',
+  const found = await pool.query<DbUser & { password_hash: string }>(
+    `SELECT ${USER_FIELDS}, password_hash FROM users WHERE email = $1`,
     [email],
   )
   const user = found.rows[0]
@@ -63,7 +63,7 @@ app.post('/api/auth/login', async (c) => {
     return c.json({ error: 'Неверная почта или пароль.' }, 401)
   }
   await startSession(c, user.id)
-  return c.json({ user: publicUser(user) })
+  return c.json({ user: publicUser(toAccount(user)) })
 })
 
 app.post('/api/auth/logout', async (c) => {
@@ -76,16 +76,14 @@ app.post('/api/auth/logout', async (c) => {
 app.get('/api/auth/me', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  return c.json({ user })
+  return c.json({ user: publicUser(user) })
 })
 
 app.get('/api/users', async (c) => {
   const actor = await requireAdmin(c)
   if (!actor.user) return c.json({ error: actor.error }, actor.status)
-  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
-    'SELECT id, email, name, role FROM users ORDER BY name, email',
-  )
-  return c.json({ users: found.rows.map(publicUser) })
+  const found = await pool.query<DbUser>(`SELECT ${USER_FIELDS} FROM users ORDER BY name, email`)
+  return c.json({ users: found.rows.map((row) => publicUser(toAccount(row))) })
 })
 
 app.post('/api/users', async (c) => {
@@ -100,22 +98,24 @@ app.post('/api/users', async (c) => {
   if (!name) return c.json({ error: 'Укажите имя.' }, 400)
   if (passwordIssue) return c.json({ error: passwordIssue }, 400)
   if (!isRole(role)) return c.json({ error: 'Неизвестные права.' }, 400)
+  const access = accessOf(body)
+  if ('error' in access) return c.json({ error: access.error }, 400)
   const id = crypto.randomUUID()
   const passwordHash = await hashPassword(body?.password as string)
   try {
-    await pool.query('INSERT INTO users (id, email, name, password_hash, role) VALUES ($1, $2, $3, $4, $5)', [
-      id,
-      email,
-      name,
-      passwordHash,
-      role,
-    ])
+    await pool.query(
+      `INSERT INTO users (id, email, name, password_hash, role, employee_id, matrix_ids, team_owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+      [id, email, name, passwordHash, role, access.employeeId, JSON.stringify(access.matrixIds), actor.user.id],
+    )
   } catch (error) {
     if (isUniqueViolation(error)) return c.json({ error: 'Такая почта уже зарегистрирована.' }, 409)
     throw error
   }
   await pool.query('INSERT INTO teams (user_id, document) VALUES ($1, $2::jsonb)', [id, JSON.stringify(emptyTeam())])
-  return c.json({ user: { id, email, name, role } }, 201)
+  return c.json({
+    user: { id, email, name, role, employeeId: access.employeeId, matrixIds: access.matrixIds },
+  }, 201)
 })
 
 app.patch('/api/users/:id', async (c) => {
@@ -123,7 +123,7 @@ app.patch('/api/users/:id', async (c) => {
   if (!actor.user) return c.json({ error: actor.error }, actor.status)
   const body = await readJson(c)
   const id = c.req.param('id')
-  const existing = await findUser(id)
+  const existing = await findAccount(id)
   if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
   const name = body && 'name' in body ? nameOf(body.name) : existing.name
   const email = body && 'email' in body ? emailOf(body) : existing.email
@@ -135,14 +135,34 @@ app.patch('/api/users/:id', async (c) => {
   if (role === 'user' && !(await anotherAdminExists(id))) {
     return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
   }
+  const touchesAccess = Boolean(body && ('employeeId' in body || 'matrixIds' in body))
+  let employeeId = existing.employeeId
+  let matrixIds = existing.matrixIds
+  let teamOwnerId = existing.teamOwnerId
+  if (touchesAccess) {
+    if (body && 'employeeId' in body) {
+      const parsed = employeeIdOf(body.employeeId)
+      if (parsed === undefined) return c.json({ error: 'Выберите сотрудника из команды.' }, 400)
+      employeeId = parsed
+    }
+    if (body && 'matrixIds' in body) {
+      const parsed = matrixIdsOf(body.matrixIds)
+      if (!parsed) return c.json({ error: 'Отметьте матрицы из команды.' }, 400)
+      matrixIds = parsed
+    }
+    teamOwnerId = actor.user.id
+  }
   try {
-    const updated = await pool.query<{ id: string; email: string; name: string; role: string }>(
-      'UPDATE users SET name = $2, email = $3, role = $4 WHERE id = $1 RETURNING id, email, name, role',
-      [id, name, email, role],
+    const updated = await pool.query<DbUser>(
+      `UPDATE users
+       SET name = $2, email = $3, role = $4, employee_id = $5, matrix_ids = $6::jsonb, team_owner_id = $7
+       WHERE id = $1
+       RETURNING ${USER_FIELDS}`,
+      [id, name, email, role, employeeId, JSON.stringify(matrixIds), teamOwnerId],
     )
     const next = updated.rows[0]
     if (!next) return c.json({ error: 'Пользователь не найден.' }, 404)
-    return c.json({ user: publicUser(next) })
+    return c.json({ user: publicUser(toAccount(next)) })
   } catch (error) {
     if (isUniqueViolation(error)) return c.json({ error: 'Такая почта уже зарегистрирована.' }, 409)
     throw error
@@ -156,28 +176,28 @@ app.post('/api/users/:id/password', async (c) => {
   const passwordIssue = passwordIssueOf(body?.password)
   if (passwordIssue) return c.json({ error: passwordIssue }, 400)
   const id = c.req.param('id')
-  const existing = await findUser(id)
+  const existing = await findAccount(id)
   if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
   await replacePassword(id, body?.password as string, id === actor.user.id ? getCookie(c, SESSION) : undefined)
-  return c.json({ user: existing })
+  return c.json({ user: publicUser(existing) })
 })
 
 app.post('/api/users/:id/reset-password', async (c) => {
   const actor = await requireAdmin(c)
   if (!actor.user) return c.json({ error: actor.error }, actor.status)
   const id = c.req.param('id')
-  const existing = await findUser(id)
+  const existing = await findAccount(id)
   if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
   const password = temporaryPassword()
   await replacePassword(id, password, id === actor.user.id ? getCookie(c, SESSION) : undefined)
-  return c.json({ user: existing, password })
+  return c.json({ user: publicUser(existing), password })
 })
 
 app.delete('/api/users/:id', async (c) => {
   const actor = await requireAdmin(c)
   if (!actor.user) return c.json({ error: actor.error }, actor.status)
   const id = c.req.param('id')
-  const existing = await findUser(id)
+  const existing = await findAccount(id)
   if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
   if (existing.role === 'admin' && !(await anotherAdminExists(id))) {
     return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
@@ -189,10 +209,11 @@ app.delete('/api/users/:id', async (c) => {
 app.get('/api/team', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  const found = await pool.query<{ document: TeamData }>('SELECT document FROM teams WHERE user_id = $1', [user.id])
-  const document = found.rows[0]?.document
+  if (user.role === 'admin') return c.json((await loadTeamDocument(user.id)) ?? emptyTeam())
+  if (!user.teamOwnerId) return c.json(emptyTeam())
+  const document = await loadTeamDocument(user.teamOwnerId)
   if (!document) return c.json(emptyTeam())
-  return c.json(document)
+  return c.json(visibleTeam(document, new Set(user.matrixIds)))
 })
 
 app.put('/api/team', async (c) => {
@@ -200,22 +221,19 @@ app.put('/api/team', async (c) => {
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
   const body = await readJson(c)
   if (!isTeamDocument(body)) return c.json({ error: 'Некорректные данные команды.' }, 400)
-  const text = JSON.stringify(body)
-  if (text.length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
-  if (user.role !== 'admin') {
-    const stored = await pool.query<{ document: TeamData }>('SELECT document FROM teams WHERE user_id = $1', [user.id])
-    const previous = stored.rows[0]?.document ?? emptyTeam()
-    if (!userChangeAllowed(previous, body)) {
-      return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
-    }
+  if (JSON.stringify(body).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
+  if (user.role === 'admin') {
+    await saveTeamDocument(user.id, body)
+    return c.json(body)
   }
-  await pool.query(
-    `INSERT INTO teams (user_id, document, updated_at)
-     VALUES ($1, $2::jsonb, now())
-     ON CONFLICT (user_id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
-    [user.id, text],
-  )
-  return c.json(body)
+  if (!user.teamOwnerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const stored = await loadTeamDocument(user.teamOwnerId)
+  if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const merged = mergeUserTeam(stored, body, new Set(user.matrixIds))
+  if (!merged) return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
+  if (JSON.stringify(merged.saved).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
+  await saveTeamDocument(user.teamOwnerId, merged.saved)
+  return c.json(merged.view)
 })
 
 async function requireAdmin(c: Parameters<typeof currentUser>[0]) {
@@ -225,13 +243,46 @@ async function requireAdmin(c: Parameters<typeof currentUser>[0]) {
   return { user, status: 200 as const, error: '' }
 }
 
-async function findUser(id: string) {
-  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
-    'SELECT id, email, name, role FROM users WHERE id = $1',
-    [id],
-  )
+const USER_FIELDS = 'id, email, name, role, employee_id, matrix_ids, team_owner_id'
+
+type DbUser = {
+  id: string
+  email: string
+  name: string
+  role: string
+  employee_id: string | null
+  matrix_ids: unknown
+  team_owner_id: string | null
+}
+
+type Account = {
+  id: string
+  email: string
+  name: string
+  role: 'admin' | 'user'
+  employeeId: string | null
+  matrixIds: string[]
+  teamOwnerId: string | null
+}
+
+async function findAccount(id: string) {
+  const found = await pool.query<DbUser>(`SELECT ${USER_FIELDS} FROM users WHERE id = $1`, [id])
   const user = found.rows[0]
-  return user ? publicUser(user) : null
+  return user ? toAccount(user) : null
+}
+
+async function loadTeamDocument(userId: string) {
+  const found = await pool.query<{ document: TeamData }>('SELECT document FROM teams WHERE user_id = $1', [userId])
+  return found.rows[0]?.document ?? null
+}
+
+async function saveTeamDocument(userId: string, document: TeamData) {
+  await pool.query(
+    `INSERT INTO teams (user_id, document, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (user_id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
+    [userId, JSON.stringify(document)],
+  )
 }
 
 async function anotherAdminExists(exceptId: string) {
@@ -249,6 +300,43 @@ async function replacePassword(userId: string, password: string, keepToken: stri
     await pool.query('DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2', [userId, tokenHash(keepToken)])
   } else {
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [userId])
+  }
+}
+
+function accessOf(body: { employeeId?: unknown; matrixIds?: unknown } | null) {
+  const employeeId = body && 'employeeId' in body ? employeeIdOf(body.employeeId) : null
+  const matrixIds = body && 'matrixIds' in body ? matrixIdsOf(body.matrixIds) : []
+  if (employeeId === undefined) return { error: 'Выберите сотрудника из команды.' }
+  if (!matrixIds) return { error: 'Отметьте матрицы из команды.' }
+  return { employeeId, matrixIds }
+}
+
+function employeeIdOf(value: unknown) {
+  if (value === null || value === '') return null
+  if (typeof value !== 'string') return undefined
+  const id = value.trim()
+  if (!id || id.length > 80) return undefined
+  return id
+}
+
+function matrixIdsOf(value: unknown) {
+  const source = typeof value === 'string' ? parseJsonArray(value) : value
+  if (!Array.isArray(source)) return null
+  const ids: string[] = []
+  for (const item of source) {
+    if (typeof item !== 'string') return null
+    const id = item.trim()
+    if (!id || id.length > 80) return null
+    if (!ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+function parseJsonArray(value: string) {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return null
   }
 }
 
@@ -275,7 +363,9 @@ function emailOf(body: { email?: unknown } | null) {
 async function readJson(c: { req: { json: () => Promise<unknown> } }) {
   try {
     const body = await c.req.json()
-    return body && typeof body === 'object' ? (body as { email?: unknown; name?: unknown; password?: unknown; role?: unknown }) : null
+    return body && typeof body === 'object'
+      ? (body as { email?: unknown; name?: unknown; password?: unknown; role?: unknown; employeeId?: unknown; matrixIds?: unknown })
+      : null
   } catch {
     return null
   }
@@ -318,22 +408,41 @@ async function startSession(c: Parameters<typeof setCookie>[0], userId: string) 
   })
 }
 
-function publicUser(user: { id: string; email: string; name: string; role: string }) {
-  return { id: user.id, email: user.email, name: user.name, role: user.role === 'user' ? 'user' as const : 'admin' as const }
+function toAccount(user: DbUser): Account {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role === 'user' ? 'user' : 'admin',
+    employeeId: typeof user.employee_id === 'string' && user.employee_id ? user.employee_id : null,
+    matrixIds: matrixIdsOf(user.matrix_ids) ?? [],
+    teamOwnerId: user.team_owner_id,
+  }
+}
+
+function publicUser(user: Account) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    employeeId: user.employeeId,
+    matrixIds: user.matrixIds,
+  }
 }
 
 async function currentUser(c: Parameters<typeof getCookie>[0]) {
   const token = getCookie(c, SESSION)
   if (!token) return null
-  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
-    `SELECT u.id, u.email, u.name, u.role
+  const found = await pool.query<DbUser>(
+    `SELECT ${USER_FIELDS.split(', ').map((field) => `u.${field}`).join(', ')}
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > now()`,
     [tokenHash(token)],
   )
   const user = found.rows[0]
-  return user ? publicUser(user) : null
+  return user ? toAccount(user) : null
 }
 
 function isDatabaseDown(error: unknown) {

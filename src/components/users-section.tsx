@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import type { Role } from '../lib/access.ts'
 import { api } from '../lib/api.ts'
 import type { User } from '../lib/session.ts'
+import { useTeamStore } from '../store/team-store.ts'
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: 'Администратор',
@@ -23,11 +25,14 @@ export function UsersSection({
   currentUserId,
   onAccountChange,
   onSelfRemoved,
+  onOpenEmployee,
 }: {
   currentUserId: string
   onAccountChange: (user: User) => void
   onSelfRemoved: () => void
+  onOpenEmployee: (employeeId: string) => void
 }) {
+  const employees = useTeamStore((state) => state.employees)
   const [users, setUsers] = useState<User[]>([])
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
@@ -62,8 +67,8 @@ export function UsersSection({
         <div>
           <h2 className="font-semibold">Права пользователей</h2>
           <p className="mt-1 max-w-xl text-sm text-ink-soft">
-            Администратор ведёт настройки и матрицу. Пользователь создаёт smart-задачи и ставит статус «Выполнено».
-            Последнего администратора нельзя понизить или удалить.
+            Свяжите учётную запись с сотрудником и отметьте матрицы, которые она видит. Администратор видит всю команду.
+            Пользователь в открытых матрицах создаёт smart-задачи и ставит статус «Выполнено».
           </p>
         </div>
         <Button type="button" variant={adding ? 'outline' : 'default'} onClick={() => setAdding((open) => !open)}>
@@ -73,6 +78,7 @@ export function UsersSection({
 
       {adding ? (
         <AddUserForm
+          employees={employees}
           onCancel={() => setAdding(false)}
           onCreated={(user) => {
             setUsers((items) => [...items, user].sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.email.localeCompare(b.email)))
@@ -93,6 +99,7 @@ export function UsersSection({
               </p>
               <p className="text-sm text-ink-soft">{user.email}</p>
               <p className="mt-1 text-sm">{ROLE_LABEL[user.role]}</p>
+              <AccessSummary user={user} employees={employees} onOpenEmployee={onOpenEmployee} />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline" onClick={() => setEditing(user)}>
@@ -116,6 +123,7 @@ export function UsersSection({
       {editing ? (
         <EditUserDialog
           user={editing}
+          employees={employees}
           onClose={() => setEditing(null)}
           onSaved={(user) => {
             replace(user)
@@ -169,9 +177,19 @@ export function UsersSection({
   )
 }
 
-function AddUserForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (user: User) => void }) {
+function AddUserForm({
+  employees,
+  onCancel,
+  onCreated,
+}: {
+  employees: TeamEmployee[]
+  onCancel: () => void
+  onCreated: (user: User) => void
+}) {
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const [employeeId, setEmployeeId] = useState('')
+  const [matrixIds, setMatrixIds] = useState<string[]>([])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -187,6 +205,8 @@ function AddUserForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
           email: String(form.get('email') ?? ''),
           password: String(form.get('password') ?? ''),
           role,
+          employeeId: employeeId || null,
+          matrixIds,
         }),
       })
       onCreated(result.user)
@@ -212,6 +232,13 @@ function AddUserForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
           </select>
         </Label>
       </div>
+      <AccessFields
+        employees={employees}
+        employeeId={employeeId}
+        matrixIds={matrixIds}
+        onEmployeeId={setEmployeeId}
+        onMatrixIds={setMatrixIds}
+      />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>
@@ -227,15 +254,19 @@ function AddUserForm({ onCancel, onCreated }: { onCancel: () => void; onCreated:
 
 function EditUserDialog({
   user,
+  employees,
   onClose,
   onSaved,
 }: {
   user: User
+  employees: TeamEmployee[]
   onClose: () => void
   onSaved: (user: User) => void
 }) {
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const [employeeId, setEmployeeId] = useState(user.employeeId ?? '')
+  const [matrixIds, setMatrixIds] = useState<string[]>(user.matrixIds ?? [])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -250,6 +281,8 @@ function EditUserDialog({
           name: String(form.get('name') ?? ''),
           email: String(form.get('email') ?? ''),
           role,
+          employeeId: employeeId || null,
+          matrixIds,
         }),
       })
       onSaved(result.user)
@@ -261,11 +294,11 @@ function EditUserDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <form onSubmit={(event) => void submit(event)} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Изменить пользователя</DialogTitle>
-            <DialogDescription>Имя, почта и права сохраняются для входа в эту учётную запись.</DialogDescription>
+            <DialogDescription>Имя, почта, права, сотрудник и доступные матрицы сохраняются для этой учётной записи.</DialogDescription>
           </DialogHeader>
           <Field label="Имя" name="name" defaultValue={user.name} autoComplete="off" />
           <Field label="Почта" name="email" type="email" defaultValue={user.email} autoComplete="off" />
@@ -276,6 +309,13 @@ function EditUserDialog({
               <option value="user">Пользователь</option>
             </select>
           </Label>
+          <AccessFields
+            employees={employees}
+            employeeId={employeeId}
+            matrixIds={matrixIds}
+            onEmployeeId={setEmployeeId}
+            onMatrixIds={setMatrixIds}
+          />
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
@@ -482,6 +522,131 @@ function DeleteUserDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+type TeamEmployee = { id: string; name: string; position: string }
+
+function AccessSummary({
+  user,
+  employees,
+  onOpenEmployee,
+}: {
+  user: User
+  employees: TeamEmployee[]
+  onOpenEmployee: (employeeId: string) => void
+}) {
+  const byId = new Map(employees.map((employee) => [employee.id, employee]))
+  const linked = user.employeeId ? byId.get(user.employeeId) : undefined
+  const matrices = (user.matrixIds ?? []).map((id) => byId.get(id)).filter((employee): employee is TeamEmployee => Boolean(employee))
+  return (
+    <div className="mt-2 grid gap-1 text-sm">
+      <p>
+        <span className="text-ink-soft">Сотрудник: </span>
+        {linked ? (
+          <button type="button" className="font-medium text-pine underline-offset-2 hover:underline" onClick={() => onOpenEmployee(linked.id)}>
+            {linked.name}
+          </button>
+        ) : (
+          <span className="text-ink-soft">{user.employeeId ? 'сотрудник не найден' : 'не выбран'}</span>
+        )}
+      </p>
+      {user.role === 'admin' ? <p className="text-ink-soft">Как администратор видит все матрицы своей команды.</p> : null}
+      <p className="text-ink-soft">
+        Матрицы:{' '}
+        {matrices.length === 0 ? (
+          'не выбраны'
+        ) : (
+          matrices.map((employee, index) => (
+            <span key={employee.id}>
+              {index > 0 ? ', ' : null}
+              <button type="button" className="font-medium text-pine underline-offset-2 hover:underline" onClick={() => onOpenEmployee(employee.id)}>
+                {employee.name}
+              </button>
+            </span>
+          ))
+        )}
+      </p>
+    </div>
+  )
+}
+
+function AccessFields({
+  employees,
+  employeeId,
+  matrixIds,
+  onEmployeeId,
+  onMatrixIds,
+}: {
+  employees: TeamEmployee[]
+  employeeId: string
+  matrixIds: string[]
+  onEmployeeId: (id: string) => void
+  onMatrixIds: (ids: string[]) => void
+}) {
+  const people = employees.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  const known = new Set(people.map((employee) => employee.id))
+  const missing = matrixIds.filter((id) => !known.has(id))
+
+  function toggle(id: string, checked: boolean) {
+    onMatrixIds(checked ? [...matrixIds, id] : matrixIds.filter((item) => item !== id))
+  }
+
+  return (
+    <div className="grid gap-3">
+      <Label className="grid gap-1.5">
+        <span>Сотрудник</span>
+        <select
+          aria-label="Сотрудник учётной записи"
+          value={employeeId}
+          onChange={(event) => {
+            const next = event.target.value
+            onEmployeeId(next)
+            if (next && !matrixIds.includes(next)) onMatrixIds([...matrixIds, next])
+          }}
+          className="h-8 rounded-lg border border-input bg-white px-2 text-sm"
+        >
+          <option value="">Не выбран</option>
+          {people.map((employee) => (
+            <option key={employee.id} value={employee.id}>
+              {employee.name} · {employee.position}
+            </option>
+          ))}
+          {employeeId && !known.has(employeeId) ? <option value={employeeId}>Сотрудник не найден</option> : null}
+        </select>
+      </Label>
+      <fieldset className="grid gap-2">
+        <legend className="text-sm font-medium">Матрицы</legend>
+        <p className="text-xs text-ink-soft">Пользователь открывает только отмеченные матрицы.</p>
+        {people.length === 0 && missing.length === 0 ? (
+          <p className="text-sm text-ink-soft">В этом месяце пока нет сотрудников.</p>
+        ) : (
+          <ul className="grid max-h-48 gap-2 overflow-y-auto">
+            {people.map((employee) => (
+              <li key={employee.id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={matrixIds.includes(employee.id)}
+                    aria-label={`Матрица: ${employee.name}`}
+                    onCheckedChange={(checked) => toggle(employee.id, checked === true)}
+                  />
+                  <span>{employee.name}</span>
+                  <span className="text-ink-soft">{employee.position}</span>
+                </label>
+              </li>
+            ))}
+            {missing.map((id) => (
+              <li key={id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked aria-label="Матрица удалённого сотрудника" onCheckedChange={(checked) => toggle(id, checked === true)} />
+                  <span className="text-ink-soft">Сотрудник не найден</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </fieldset>
+    </div>
   )
 }
 

@@ -130,6 +130,7 @@ export default function App() {
             if (user.id === session.user.id) setSession({ status: 'in', user })
           }}
           onSelfRemoved={() => void logout()}
+          onOpenEmployee={(employeeId) => navigate({ name: 'matrix', employeeId })}
         />
       ) : null}
     </Shell>
