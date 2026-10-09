@@ -186,8 +186,11 @@ export function createSeed(): TeamData {
     },
   ]
 
+  const currentPeriod = '2026-10'
   return {
+    currentPeriod,
     periodLabel: 'Октябрь 2026',
+    periods: [{ id: currentPeriod, employees, kpiCatalog }],
     employees,
     kpiCatalog,
   }

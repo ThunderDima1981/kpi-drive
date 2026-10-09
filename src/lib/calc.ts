@@ -92,6 +92,25 @@ export function planPoint(points: KpiPoint[]): KpiPoint | null {
   )
 }
 
+export function pointsWithPlan(points: KpiPoint[], plan: number): { points: KpiPoint[] } | { error: string } {
+  if (!Number.isFinite(plan)) return { error: 'Введите число.' }
+  const current = planPoint(points)
+  if (points.some((point) => point.id !== current?.id && nearlyEqual(point.value, plan))) {
+    return { error: 'Такое значение уже есть на шкале.' }
+  }
+  if (!current) {
+    return { points: [...points, { id: crypto.randomUUID(), value: plan, completion: 100 }] }
+  }
+  if (nearlyEqual(current.value, plan)) return { points }
+  return { points: points.map((point) => (point.id === current.id ? { ...point, value: plan } : point)) }
+}
+
+export function startingFact(points: KpiPoint[]) {
+  const zeros = points.filter((point) => Number.isFinite(point.value) && nearlyEqual(point.completion, 0))
+  if (zeros[0]) return zeros[0].value
+  return points.find((point) => Number.isFinite(point.value))?.value ?? 0
+}
+
 export function kpiCompletionOf(kpi: CatalogKpi): number {
   return completionOnScale(kpi.fact, asScalePoints(kpi.points))
 }

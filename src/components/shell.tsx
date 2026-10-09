@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LayoutDashboard, Menu, Settings, X } from 'lucide-react'
+import { PeriodCalendar } from './period-calendar.tsx'
 import { cn } from '@/lib/utils'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
@@ -62,6 +63,9 @@ export function Shell({
 function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Route) => void }) {
   const employees = useTeamStore((state) => state.employees)
   const periodLabel = useTeamStore((state) => state.periodLabel)
+  const currentPeriod = useTeamStore((state) => state.currentPeriod)
+  const selectPeriod = useTeamStore((state) => state.selectPeriod)
+  const [periodOpen, setPeriodOpen] = useState(false)
   const org = useOrgList(employees)
 
   return (
@@ -111,9 +115,22 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
           />
         )}
       </div>
-      <div className="border-t border-white/10 px-5 py-4">
-        <p className="text-xs text-white/45">Период</p>
-        <p className="mt-1 text-sm font-medium">{periodLabel || 'Не задан'}</p>
+      <div className="relative border-t border-white/10 px-5 py-4">
+        {periodOpen ? (
+          <div className="absolute right-3 bottom-full left-3 z-20 mb-2 rounded-2xl border border-line bg-paper p-3 text-ink shadow-xl">
+            <PeriodCalendar
+              value={currentPeriod}
+              onChange={(id) => {
+                selectPeriod(id)
+                setPeriodOpen(false)
+              }}
+            />
+          </div>
+        ) : null}
+        <button type="button" className="w-full text-left" aria-expanded={periodOpen} onClick={() => setPeriodOpen((open) => !open)}>
+          <p className="text-xs text-white/45">Период</p>
+          <p className="mt-1 text-sm font-medium">{periodLabel || 'Не задан'}</p>
+        </button>
         <p className="mt-3 text-xs leading-relaxed text-white/45">Считается только КР. Оклады и премии не участвуют.</p>
       </div>
     </div>

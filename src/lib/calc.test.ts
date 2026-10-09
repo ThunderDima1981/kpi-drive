@@ -12,6 +12,7 @@ import {
   normalizeEvaluatorId,
   planPoint,
   pointsFromLegacyScale,
+  pointsWithPlan,
   scaleOrderIssue,
   standardSeries,
   weightedOf,
@@ -90,6 +91,13 @@ describe('shared kpi catalog', () => {
     const inverse = leads(320, { threshold: 400, plan: 300, maximum: 250, inverse: true })
     expect(kpiCompletionOf(catalogFrom('kpi-cpl', inverse, '₽'))).toBe(80)
     expect(planPoint(pointsFromLegacyScale('kpi-leads', leads(900)))?.value).toBe(1000)
+  })
+
+  it('moves the 100% point when the catalog plan changes', () => {
+    const points = pointsFromLegacyScale('kpi-leads', leads(900))
+    const moved = pointsWithPlan(points, 1100)
+    expect('points' in moved && planPoint(moved.points)?.value).toBe(1100)
+    expect(pointsWithPlan(points, 500)).toMatchObject({ error: expect.stringMatching(/шкале/) })
   })
 
   it('uses one shared fact for every matrix that includes the indicator', () => {

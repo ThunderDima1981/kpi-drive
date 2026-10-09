@@ -1,5 +1,6 @@
 import { ArrowUpRight } from 'lucide-react'
 import { TeamKrChart, ZoneChart } from './analytics-charts.tsx'
+import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { matrixResult } from '../lib/calc.ts'
@@ -11,6 +12,8 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
   const employees = useTeamStore((state) => state.employees)
   const kpiCatalog = useTeamStore((state) => state.kpiCatalog)
   const periodLabel = useTeamStore((state) => state.periodLabel)
+  const currentPeriod = useTeamStore((state) => state.currentPeriod)
+  const selectPeriod = useTeamStore((state) => state.selectPeriod)
   const org = useOrgList(employees)
   const rows = employees
     .map((employee) => {
@@ -26,13 +29,16 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">{periodLabel}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight md:text-4xl">Результативность команды</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
-            Коэффициент результативности — взвешенная сумма выполнения матрицы. Зарплата и премии в расчёт не входят.
+            Коэффициент результативности — взвешенная сумма выполнения матрицы за выбранный месяц. Зарплата и премии в расчёт не входят.
           </p>
+        </div>
+        <div className="w-full rounded-2xl border border-line bg-card p-4 shadow-sm sm:w-[22rem]">
+          <PeriodCalendar value={currentPeriod} onChange={selectPeriod} />
         </div>
       </header>
 

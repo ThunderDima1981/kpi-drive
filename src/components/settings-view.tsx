@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KpiCatalogSection } from './kpi-catalog.tsx'
+import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { initials } from '../lib/format.ts'
@@ -12,8 +13,8 @@ import type { Employee } from '../types.ts'
 
 export function SettingsView() {
   const employees = useTeamStore((state) => state.employees)
-  const periodLabel = useTeamStore((state) => state.periodLabel)
-  const setPeriodLabel = useTeamStore((state) => state.setPeriodLabel)
+  const currentPeriod = useTeamStore((state) => state.currentPeriod)
+  const selectPeriod = useTeamStore((state) => state.selectPeriod)
   const addEmployee = useTeamStore((state) => state.addEmployee)
   const resetDemo = useTeamStore((state) => state.resetDemo)
   const org = useOrgList(employees)
@@ -45,10 +46,7 @@ export function SettingsView() {
       </header>
 
       <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-        <Label className="grid gap-1.5">
-          <span>Период матрицы</span>
-          <Input value={periodLabel} aria-label="Период матрицы" onValueChange={setPeriodLabel} />
-        </Label>
+        <PeriodCalendar value={currentPeriod} onChange={selectPeriod} />
       </section>
 
       <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">

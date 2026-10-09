@@ -4,13 +4,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
 import { defaultKpiPoints, kpiCompletionOf, planPoint } from '../lib/calc.ts'
-import { formatNumber, formatPercent } from '../lib/format.ts'
+import { formatNumber, formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { CatalogKpi } from '../types.ts'
 
 export function KpiCatalogSection() {
   const employees = useTeamStore((state) => state.employees)
   const kpiCatalog = useTeamStore((state) => state.kpiCatalog)
+  const periodLabel = useTeamStore((state) => state.periodLabel)
   const addCatalogKpi = useTeamStore((state) => state.addCatalogKpi)
   const updateCatalogKpi = useTeamStore((state) => state.updateCatalogKpi)
   const removeCatalogKpi = useTeamStore((state) => state.removeCatalogKpi)
@@ -41,7 +42,7 @@ export function KpiCatalogSection() {
     <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
       <h2 className="font-semibold">Справочник количественных KPI</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        План, факт и точки шкалы хранятся здесь. В матрицу сотрудника показатель добавляется отдельно, со своим весом.
+        План, факт и шкала относятся к периоду «{periodLabel}». План — это точка со 100% выполнения. В матрице у сотрудника задаётся только вес.
       </p>
       <form onSubmit={add} className="mt-4 grid gap-3 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
         <Label className="grid gap-1.5">
@@ -86,6 +87,57 @@ export function KpiCatalogSection() {
   )
 }
 
+function PlanField({ item }: { item: CatalogKpi }) {
+  const setCatalogPlan = useTeamStore((state) => state.setCatalogPlan)
+  const plan = planPoint(item.points)
+  const [draft, setDraft] = useState(plan ? String(plan.value) : '')
+  const [saved, setSaved] = useState(plan?.value)
+  const [error, setError] = useState('')
+  if (saved !== plan?.value) {
+    setSaved(plan?.value)
+    setDraft(plan ? String(plan.value) : '')
+    setError('')
+  }
+
+  function commit() {
+    const parsed = parseNumber(draft)
+    if (parsed === null) {
+      setError('Введите число.')
+      setDraft(plan ? String(plan.value) : '')
+      return
+    }
+    if (plan && parsed === plan.value) {
+      setError('')
+      return
+    }
+    const message = setCatalogPlan(item.id, parsed)
+    if (message) {
+      setError(message)
+      setDraft(plan ? String(plan.value) : '')
+      return
+    }
+    setError('')
+  }
+
+  return (
+    <Label className="grid gap-1.5">
+      <span>План{item.unit ? `, ${item.unit}` : ''}</span>
+      <Input
+        inputMode="decimal"
+        value={draft}
+        aria-label={`План: ${item.name}`}
+        aria-invalid={Boolean(error)}
+        onValueChange={(value) => {
+          setDraft(value)
+          if (error) setError('')
+        }}
+        onBlur={commit}
+      />
+      {error ? <span className="text-xs font-normal text-destructive">{error}</span> : null}
+    </Label>
+  )
+}
+
 function CatalogRow({
   item,
   holders,
@@ -113,8 +165,6 @@ function CatalogRow({
     setName(item.name)
     setUnit(item.unit)
   }
-  const plan = planPoint(item.points)
-
   function commit() {
     const nextName = name.trim()
     if (!nextName) {
@@ -138,11 +188,13 @@ function CatalogRow({
           <Input value={unit} aria-label={`Единица KPI: ${item.name}`} onValueChange={setUnit} onBlur={commit} />
         </Label>
       </div>
-      <p className="mt-2 text-xs text-ink-soft">
-        План {plan ? formatNumber(plan.value) : '—'}
-        {item.unit ? ` ${item.unit}` : ''} · Факт {formatNumber(item.fact)}
-        {item.unit ? ` ${item.unit}` : ''} · {formatPercent(kpiCompletionOf(item))}
-      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[11rem_1fr] sm:items-end">
+        <PlanField item={item} />
+        <p className="text-xs text-ink-soft">
+          Факт {formatNumber(item.fact)}
+          {item.unit ? ` ${item.unit}` : ''} · Выполнение {formatPercent(kpiCompletionOf(item))}
+        </p>
+      </div>
       <p className="mt-1 text-xs text-ink-soft">
         {holders.length > 0 ? `В матрицах: ${holders.join(', ')}` : 'Пока ни в одной матрице'}
       </p>

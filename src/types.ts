@@ -75,8 +75,16 @@ export interface Employee {
   indicators: Indicator[]
 }
 
+export interface PeriodSnapshot {
+  id: string
+  employees: Employee[]
+  kpiCatalog: CatalogKpi[]
+}
+
 export interface TeamData {
+  currentPeriod: string
   periodLabel: string
+  periods: PeriodSnapshot[]
   employees: Employee[]
   kpiCatalog: CatalogKpi[]
 }
