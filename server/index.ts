@@ -170,6 +170,6 @@ async function currentUser(c: Parameters<typeof getCookie>[0]) {
 const port = Number(process.env.PORT ?? 4327)
 
 await migrate()
-serve({ fetch: app.fetch, hostname: '0.0.0.0', port }, (info) => {
+serve({ fetch: app.fetch, hostname: '::', port }, (info) => {
   console.log(`API http://${info.address}:${info.port}`)
 })
