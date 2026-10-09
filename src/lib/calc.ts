@@ -80,6 +80,17 @@ export function completionOnScale(score: number, points: ScalePoint[]) {
   return lower.completion + ratio * (upper.completion - lower.completion)
 }
 
+export function normalizeEvaluatorId(
+  value: unknown,
+  employeeIds: ReadonlySet<string>,
+  managerId: string | null,
+): string | null {
+  if (typeof value === 'string' && employeeIds.has(value)) return value
+  if (value === null) return null
+  if (managerId && employeeIds.has(managerId)) return managerId
+  return null
+}
+
 export function normalizeStandard(indicator: Indicator): Indicator {
   if (indicator.type !== 'standard') return indicator
   const legacy = indicator as StandardIndicator
@@ -87,6 +98,7 @@ export function normalizeStandard(indicator: Indicator): Indicator {
     ...legacy,
     score: Number.isFinite(legacy.score) ? legacy.score : 0,
     points: normalizePoints(legacy.points),
+    evaluatorId: typeof legacy.evaluatorId === 'string' ? legacy.evaluatorId : null,
   }
 }
 

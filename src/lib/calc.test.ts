@@ -6,6 +6,7 @@ import {
   explainStandard,
   kpiCompletion,
   matrixResult,
+  normalizeEvaluatorId,
   scaleOrderIssue,
   standardSeries,
   weightedOf,
@@ -166,5 +167,19 @@ describe('standard scale', () => {
     }
     expect(completionOf(custom)).toBe(80)
     expect(completionOf({ ...custom, score: -0.5 })).toBe(75)
+  })
+
+  it('assigns an evaluator from the team', () => {
+    const ids = new Set(['emp-ivanov', 'emp-sidorov', 'emp-petrova'])
+    expect(normalizeEvaluatorId('emp-petrova', ids, 'emp-ivanov')).toBe('emp-petrova')
+    expect(normalizeEvaluatorId(undefined, ids, 'emp-ivanov')).toBe('emp-ivanov')
+    expect(normalizeEvaluatorId(null, ids, 'emp-ivanov')).toBe(null)
+    expect(normalizeEvaluatorId('missing', ids, 'emp-ivanov')).toBe('emp-ivanov')
+    expect(normalizeEvaluatorId('missing', ids, null)).toBe(null)
+    const sidorov = createSeed().employees.find((employee) => employee.id === 'emp-sidorov')
+    const comms = sidorov?.indicators.find((item) => item.id === 'std-comms')
+    expect(comms?.type === 'standard' ? comms.evaluatorId : null).toBe('emp-ivanov')
+    const ivanov = createSeed().employees[0]?.indicators.find((item) => item.id === 'std-deadlines')
+    expect(ivanov?.type === 'standard' ? ivanov.evaluatorId : null).toBe('emp-petrova')
   })
 })

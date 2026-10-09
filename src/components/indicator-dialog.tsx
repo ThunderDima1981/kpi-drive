@@ -22,7 +22,7 @@ import type { Indicator, IndicatorType, KpiIndicator, SmartComment, SmartStatus,
 const TYPE_OPTIONS: { id: IndicatorType; label: string; hint: string }[] = [
   { id: 'kpi', label: 'Количественный KPI', hint: 'Порог, план и максимум' },
   { id: 'smart', label: 'Smart-задача', hint: 'Статус вместо прогресса' },
-  { id: 'standard', label: 'Стандарт', hint: 'Оценка от −2 до +2' },
+  { id: 'standard', label: 'Стандарт', hint: 'Оценка и оценщик' },
 ]
 
 const SCORES: StandardScore[] = [-2, -1, 0, 1, 2]
@@ -43,6 +43,7 @@ interface Draft {
   status: SmartStatus
   comments: SmartComment[]
   score: number
+  evaluatorId: string
 }
 
 function emptyDraft(type: IndicatorType): Draft {
@@ -62,6 +63,7 @@ function emptyDraft(type: IndicatorType): Draft {
     status: 'created',
     comments: [],
     score: 0,
+    evaluatorId: '',
   }
 }
 
@@ -83,6 +85,7 @@ function draftFrom(indicator: Indicator): Draft {
       status: 'created',
       comments: [],
       score: 0,
+      evaluatorId: '',
     }
   }
   if (indicator.type === 'smart') {
@@ -101,6 +104,7 @@ function draftFrom(indicator: Indicator): Draft {
     name: indicator.name,
     weight: String(indicator.weight),
     score: indicator.score,
+    evaluatorId: indicator.evaluatorId ?? '',
   }
 }
 
@@ -120,7 +124,14 @@ export function IndicatorDialog({
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
   const removeIndicator = useTeamStore((state) => state.removeIndicator)
   const addComment = useTeamStore((state) => state.addComment)
-  const [draft, setDraft] = useState<Draft>(() => (initial ? draftFrom(initial) : emptyDraft(defaultType)))
+  const [draft, setDraft] = useState<Draft>(() => {
+    const next = initial ? draftFrom(initial) : emptyDraft(defaultType)
+    if (!initial && defaultType === 'standard' && !next.evaluatorId) {
+      const owner = useTeamStore.getState().employees.find((item) => item.id === employeeId)
+      next.evaluatorId = owner?.managerId ?? ''
+    }
+    return next
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [commentText, setCommentText] = useState('')
   const [commentError, setCommentError] = useState('')
@@ -194,13 +205,18 @@ export function IndicatorDialog({
         comments: draft.comments,
       }
     } else if (weight !== null) {
-      indicator = {
-        id: initial?.id ?? crypto.randomUUID(),
-        type: 'standard',
-        name,
-        weight,
-        score: draft.score,
-        points: initial?.type === 'standard' ? initial.points : defaultStandardPoints(),
+      const evaluatorId = employees.some((item) => item.id === draft.evaluatorId) ? draft.evaluatorId : ''
+      if (!evaluatorId) nextErrors.evaluator = 'Выберите оценщика из сотрудников.'
+      else {
+        indicator = {
+          id: initial?.id ?? crypto.randomUUID(),
+          type: 'standard',
+          name,
+          weight,
+          score: draft.score,
+          evaluatorId,
+          points: initial?.type === 'standard' ? initial.points : defaultStandardPoints(),
+        }
       }
     }
 
@@ -234,7 +250,16 @@ export function IndicatorDialog({
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => setDraft((current) => ({ ...current, type: option.id }))}
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      type: option.id,
+                      evaluatorId:
+                        option.id === 'standard' && !current.evaluatorId
+                          ? (employee?.managerId ?? '')
+                          : current.evaluatorId,
+                    }))
+                  }
                   className={cn(
                     'rounded-xl border px-3 py-2 text-left',
                     draft.type === option.id ? 'border-pine bg-pine/5' : 'border-line hover:bg-muted',
@@ -367,7 +392,27 @@ export function IndicatorDialog({
             ) : null}
 
             {draft.type === 'standard' ? (
-              <div>
+              <div className="grid gap-4">
+                <Field label="Оценщик" error={errors.evaluator}>
+                  <select
+                    aria-label="Оценщик стандарта"
+                    value={draft.evaluatorId}
+                    onChange={(event) => setDraft((current) => ({ ...current, evaluatorId: event.target.value }))}
+                    className="h-9 w-full rounded-lg border border-input bg-white px-2 text-sm"
+                  >
+                    <option value="">Выберите сотрудника</option>
+                    {employees
+                      .slice()
+                      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+                      .map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.name}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-ink-soft">Сотрудник, который ставит оценку по этому стандарту.</p>
+                </Field>
+                <div>
                 <p className="mb-2 text-sm font-medium">Текущая оценка</p>
                 <select
                   aria-label="Текущая оценка стандарта"
@@ -385,6 +430,7 @@ export function IndicatorDialog({
                     ))}
                 </select>
                 <p className="mt-2 text-xs text-ink-soft">Точки шкалы и их проценты выполнения меняются на графике.</p>
+                </div>
               </div>
             ) : null}
           </div>

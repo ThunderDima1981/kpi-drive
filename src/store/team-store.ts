@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
-import { normalizeStandard } from '../lib/calc.ts'
+import { normalizeEvaluatorId, normalizeStandard } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
 import { normalizeIndicator } from '../lib/smart.ts'
 import type { Employee, Indicator, SmartComment, SmartStatus, TeamData } from '../types.ts'
@@ -19,6 +19,7 @@ interface TeamState extends TeamData {
   setStatus: (employeeId: string, indicatorId: string, status: SmartStatus) => void
   addComment: (employeeId: string, indicatorId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: number) => void
+  setEvaluator: (employeeId: string, indicatorId: string, evaluatorId: string | null) => void
   resetDemo: () => void
 }
 
@@ -29,19 +30,38 @@ function uid() {
 function normalizeTeam(persisted: unknown): TeamData {
   const data = persisted as Partial<TeamData> | undefined
   const raw = Array.isArray(data?.employees) ? data.employees : []
+  const employeeIds = new Set(
+    raw.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const id = (item as Partial<Employee>).id
+      return typeof id === 'string' && id ? [id] : []
+    }),
+  )
   const employees = sanitizeEmployees(
     raw.flatMap((item) => {
       if (!item || typeof item !== 'object') return []
       const employee = item as Partial<Employee>
       if (typeof employee.id !== 'string' || !employee.id) return []
+      const managerId = typeof employee.managerId === 'string' ? employee.managerId : null
       return [
         {
           id: employee.id,
           name: typeof employee.name === 'string' ? employee.name : '',
           position: typeof employee.position === 'string' ? employee.position : '',
-          managerId: typeof employee.managerId === 'string' ? employee.managerId : null,
+          managerId,
           indicators: Array.isArray(employee.indicators)
-            ? employee.indicators.map((indicator) => normalizeStandard(normalizeIndicator(indicator)))
+            ? employee.indicators.map((indicator) => {
+                const rawEvaluator =
+                  indicator && typeof indicator === 'object'
+                    ? (indicator as { evaluatorId?: unknown }).evaluatorId
+                    : undefined
+                const normalized = normalizeStandard(normalizeIndicator(indicator))
+                if (normalized.type !== 'standard') return normalized
+                return {
+                  ...normalized,
+                  evaluatorId: normalizeEvaluatorId(rawEvaluator, employeeIds, managerId),
+                }
+              })
             : [],
         },
       ]
@@ -119,9 +139,15 @@ export const useTeamStore = create<TeamState>()(
           return {
             employees: state.employees
               .filter((employee) => employee.id !== id)
-              .map((employee) =>
-                employee.managerId === id ? { ...employee, managerId: nextManager } : employee,
-              ),
+              .map((employee) => ({
+                ...employee,
+                managerId: employee.managerId === id ? nextManager : employee.managerId,
+                indicators: employee.indicators.map((indicator) => {
+                  if (indicator.type !== 'standard' || indicator.evaluatorId !== id) return indicator
+                  const fallback = employee.managerId === id ? nextManager : employee.managerId
+                  return { ...indicator, evaluatorId: fallback }
+                }),
+              })),
           }
         }),
       addIndicator: (employeeId, indicator) =>
@@ -171,6 +197,15 @@ export const useTeamStore = create<TeamState>()(
             indicator.type === 'standard' ? { ...indicator, score } : indicator,
           ),
         })),
+      setEvaluator: (employeeId, indicatorId, evaluatorId) =>
+        set((state) => {
+          if (evaluatorId !== null && !state.employees.some((employee) => employee.id === evaluatorId)) return state
+          return {
+            employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
+              indicator.type === 'standard' ? { ...indicator, evaluatorId } : indicator,
+            ),
+          }
+        }),
       resetDemo: () => {
         const next = createSeed()
         set({ periodLabel: next.periodLabel, employees: next.employees })

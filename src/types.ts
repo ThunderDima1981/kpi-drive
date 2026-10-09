@@ -48,6 +48,7 @@ export interface StandardIndicator {
   weight: number
   score: number
   points: ScalePoint[]
+  evaluatorId: string | null
 }
 
 export type Indicator = KpiIndicator | SmartIndicator | StandardIndicator

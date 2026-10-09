@@ -13,8 +13,14 @@ function smart(
   return { id, type: 'smart', name, weight, status, detail, criterion, comments }
 }
 
-function standard(id: string, name: string, weight: number, score: number): StandardIndicator {
-  return { id, type: 'standard', name, weight, score, points: defaultStandardPoints() }
+function standard(
+  id: string,
+  name: string,
+  weight: number,
+  score: number,
+  evaluatorId: string,
+): StandardIndicator {
+  return { id, type: 'standard', name, weight, score, evaluatorId, points: defaultStandardPoints() }
 }
 
 function kpi(
@@ -68,7 +74,7 @@ export function createSeed(): TeamData {
             },
           ],
         ),
-        standard('std-deadlines', 'Соблюдение дедлайнов отчетности', 10, 0),
+        standard('std-deadlines', 'Соблюдение дедлайнов отчетности', 10, 0, 'emp-petrova'),
       ],
     },
     {
@@ -94,7 +100,7 @@ export function createSeed(): TeamData {
             },
           ],
         ),
-        standard('std-talks', 'Качество переговоров', 10, 1),
+        standard('std-talks', 'Качество переговоров', 10, 1, 'emp-ivanov'),
       ],
     },
     {
@@ -113,7 +119,7 @@ export function createSeed(): TeamData {
           'Собрать на одном экране выручку, лиды и выполнение матриц за месяц.',
           'Совет открывает дашборд без выгрузки из таблиц, цифры совпадают с учётной системой.',
         ),
-        standard('std-comms', 'Коммуникация с заказчиками', 10, -1),
+        standard('std-comms', 'Коммуникация с заказчиками', 10, -1, 'emp-ivanov'),
       ],
     },
     {
@@ -132,7 +138,7 @@ export function createSeed(): TeamData {
           'Описать первые 30 дней для новых сотрудников и чек-лист руководителя.',
           'Программа утверждена, по ней прошёл хотя бы один новый сотрудник.',
         ),
-        standard('std-hiring', 'Соблюдение регламента найма', 15, 0),
+        standard('std-hiring', 'Соблюдение регламента найма', 15, 0, 'emp-petrova'),
       ],
     },
     {
@@ -151,7 +157,7 @@ export function createSeed(): TeamData {
           'Показать новому пользователю первый сценарий за три шага.',
           'Онбординг включён на всех новых аккаунтах, до конца сценария доходят не меньше 60%.',
         ),
-        standard('std-status', 'Прозрачность статусов', 15, 2),
+        standard('std-status', 'Прозрачность статусов', 15, 2, 'emp-ivanov'),
       ],
     },
   ]

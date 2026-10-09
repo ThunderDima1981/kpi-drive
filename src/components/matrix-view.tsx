@@ -22,6 +22,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const setFact = useTeamStore((state) => state.setFact)
   const setStatus = useTeamStore((state) => state.setStatus)
   const setScore = useTeamStore((state) => state.setScore)
+  const setEvaluator = useTeamStore((state) => state.setEvaluator)
   const removeIndicator = useTeamStore((state) => state.removeIndicator)
   const employee = employees.find((item) => item.id === employeeId)
   const [editor, setEditor] = useState<{ indicator: Indicator | null; type: IndicatorType } | null>(null)
@@ -60,7 +61,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'standard',
       title: 'Стандарты',
-      hint: 'На графике задаются точки шкалы и процент выполнения каждой. В строке выбирается текущая оценка.',
+      hint: 'Оценщик выбирается из сотрудников. На графике задаются точки шкалы и процент выполнения каждой.',
       icon: ShieldCheck,
     },
   ]
@@ -159,8 +160,10 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
             ) : (
               <StandardTable
                 items={items.filter((item): item is StandardIndicator => item.type === 'standard')}
+                employees={employees}
                 pendingDelete={pendingDelete}
                 onScore={(id, score) => setScore(employee.id, id, score)}
+                onEvaluator={(id, evaluatorId) => setEvaluator(employee.id, id, evaluatorId)}
                 onChart={setChartId}
                 onEdit={(indicator) => setEditor({ indicator, type: 'standard' })}
                 onAskDelete={setPendingDelete}
@@ -369,28 +372,34 @@ function SmartTable({
 
 function StandardTable({
   items,
+  employees,
   pendingDelete,
   onScore,
+  onEvaluator,
   onChart,
   onEdit,
   onAskDelete,
   onDelete,
 }: {
   items: StandardIndicator[]
+  employees: { id: string; name: string }[]
   pendingDelete: string | null
   onScore: (id: string, score: number) => void
+  onEvaluator: (id: string, evaluatorId: string) => void
   onChart: (id: string) => void
   onEdit: (indicator: StandardIndicator) => void
   onAskDelete: (id: string | null) => void
   onDelete: (id: string) => void
 }) {
+  const people = employees.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   return (
     <div className="overflow-x-auto border-t border-line">
-      <table className="w-full min-w-[760px] border-collapse text-sm">
+      <table className="w-full min-w-[920px] border-collapse text-sm">
         <thead className="bg-[#f7f3ea] text-left text-xs tracking-wide text-ink-soft uppercase">
           <tr>
             <th className="px-4 py-3 font-medium">Название</th>
             <th className="px-3 py-3 font-medium">Вес</th>
+            <th className="px-3 py-3 font-medium">Оценщик</th>
             <th className="px-3 py-3 font-medium">Оценка</th>
             <th className="px-3 py-3 font-medium">% выполнения</th>
             <th className="px-3 py-3 font-medium">Взвешенный</th>
@@ -402,6 +411,21 @@ function StandardTable({
             <tr key={indicator.id} className="border-t border-line">
               <th className="px-4 py-3 text-left font-medium">{indicator.name}</th>
               <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
+              <td className="px-3 py-3">
+                <select
+                  aria-label={`Оценщик: ${indicator.name}`}
+                  value={indicator.evaluatorId ?? ''}
+                  onChange={(event) => onEvaluator(indicator.id, event.target.value)}
+                  className="h-8 max-w-52 rounded-lg border border-line bg-white px-2 text-sm"
+                >
+                  {indicator.evaluatorId ? null : <option value="">Выберите сотрудника</option>}
+                  {people.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name}
+                    </option>
+                  ))}
+                </select>
+              </td>
               <td className="px-3 py-3">
                 <select
                   aria-label={`Оценка: ${indicator.name}`}

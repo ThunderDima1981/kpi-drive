@@ -141,6 +141,9 @@ function StandardScaleEditor({
 }) {
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
   const setScore = useTeamStore((state) => state.setScore)
+  const evaluatorName = useTeamStore(
+    (state) => state.employees.find((item) => item.id === indicator.evaluatorId)?.name ?? null,
+  )
   const [drafts, setDrafts] = useState<Record<string, { score?: string; completion?: string }>>({})
   const [error, setError] = useState('')
   const data = standardSeries(indicator)
@@ -228,6 +231,7 @@ function StandardScaleEditor({
         <DialogTitle>{indicator.name}</DialogTitle>
         <DialogDescription>
           Каждая точка — оценка и её процент выполнения. Линия между точками прямая, текущая оценка отмечена на графике.
+          Оценщик: {evaluatorName ?? 'не назначен'}.
         </DialogDescription>
       </DialogHeader>
       <div className="h-64">
