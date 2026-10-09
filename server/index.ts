@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { isRole, userChangeAllowed } from '../src/lib/access.ts'
 import { emptyTeam } from '../src/lib/period.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
@@ -45,7 +46,7 @@ app.post('/api/auth/register', async (c) => {
   }
   await pool.query('INSERT INTO teams (user_id, document) VALUES ($1, $2::jsonb)', [id, JSON.stringify(emptyTeam())])
   await startSession(c, id)
-  return c.json({ user: { id, email, name } })
+  return c.json({ user: { id, email, name, role: 'admin' as const } })
 })
 
 app.post('/api/auth/login', async (c) => {
@@ -53,8 +54,8 @@ app.post('/api/auth/login', async (c) => {
   const email = emailOf(body)
   const password = typeof body?.password === 'string' ? body.password : ''
   if (!email || !password) return c.json({ error: 'Неверная почта или пароль.' }, 401)
-  const found = await pool.query<{ id: string; email: string; name: string; password_hash: string }>(
-    'SELECT id, email, name, password_hash FROM users WHERE email = $1',
+  const found = await pool.query<{ id: string; email: string; name: string; role: string; password_hash: string }>(
+    'SELECT id, email, name, role, password_hash FROM users WHERE email = $1',
     [email],
   )
   const user = found.rows[0]
@@ -62,7 +63,7 @@ app.post('/api/auth/login', async (c) => {
     return c.json({ error: 'Неверная почта или пароль.' }, 401)
   }
   await startSession(c, user.id)
-  return c.json({ user: { id: user.id, email: user.email, name: user.name } })
+  return c.json({ user: publicUser(user) })
 })
 
 app.post('/api/auth/logout', async (c) => {
@@ -76,6 +77,42 @@ app.get('/api/auth/me', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
   return c.json({ user })
+})
+
+app.get('/api/users', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: 'Это может только администратор.' }, 403)
+  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
+    'SELECT id, email, name, role FROM users ORDER BY name, email',
+  )
+  return c.json({ users: found.rows.map(publicUser) })
+})
+
+app.patch('/api/users/:id', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  if (user.role !== 'admin') return c.json({ error: 'Это может только администратор.' }, 403)
+  const body = await readJson(c)
+  const role = body && 'role' in body ? body.role : null
+  if (!isRole(role)) return c.json({ error: 'Неизвестные права.' }, 400)
+  const id = c.req.param('id')
+  if (role === 'user') {
+    const admins = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM users WHERE role = 'admin' AND id <> $1`,
+      [id],
+    )
+    if (Number(admins.rows[0]?.count ?? 0) === 0) {
+      return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
+    }
+  }
+  const updated = await pool.query<{ id: string; email: string; name: string; role: string }>(
+    'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, email, name, role',
+    [id, role],
+  )
+  const next = updated.rows[0]
+  if (!next) return c.json({ error: 'Пользователь не найден.' }, 404)
+  return c.json({ user: publicUser(next) })
 })
 
 app.get('/api/team', async (c) => {
@@ -94,6 +131,13 @@ app.put('/api/team', async (c) => {
   if (!isTeamDocument(body)) return c.json({ error: 'Некорректные данные команды.' }, 400)
   const text = JSON.stringify(body)
   if (text.length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
+  if (user.role !== 'admin') {
+    const stored = await pool.query<{ document: TeamData }>('SELECT document FROM teams WHERE user_id = $1', [user.id])
+    const previous = stored.rows[0]?.document ?? emptyTeam()
+    if (!userChangeAllowed(previous, body)) {
+      return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
+    }
+  }
   await pool.query(
     `INSERT INTO teams (user_id, document, updated_at)
      VALUES ($1, $2::jsonb, now())
@@ -113,7 +157,7 @@ function emailOf(body: { email?: unknown } | null) {
 async function readJson(c: { req: { json: () => Promise<unknown> } }) {
   try {
     const body = await c.req.json()
-    return body && typeof body === 'object' ? (body as { email?: unknown; name?: unknown; password?: unknown }) : null
+    return body && typeof body === 'object' ? (body as { email?: unknown; name?: unknown; password?: unknown; role?: unknown }) : null
   } catch {
     return null
   }
@@ -156,17 +200,22 @@ async function startSession(c: Parameters<typeof setCookie>[0], userId: string) 
   })
 }
 
+function publicUser(user: { id: string; email: string; name: string; role: string }) {
+  return { id: user.id, email: user.email, name: user.name, role: user.role === 'user' ? 'user' as const : 'admin' as const }
+}
+
 async function currentUser(c: Parameters<typeof getCookie>[0]) {
   const token = getCookie(c, SESSION)
   if (!token) return null
-  const found = await pool.query<{ id: string; email: string; name: string }>(
-    `SELECT u.id, u.email, u.name
+  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
+    `SELECT u.id, u.email, u.name, u.role
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > now()`,
     [tokenHash(token)],
   )
-  return found.rows[0] ?? null
+  const user = found.rows[0]
+  return user ? publicUser(user) : null
 }
 
 function isDatabaseDown(error: unknown) {

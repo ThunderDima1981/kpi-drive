@@ -7,6 +7,7 @@ import { useOrgList } from './use-org-list.ts'
 import type { OrgNode } from '../lib/org.ts'
 import type { Route } from '../lib/routes.ts'
 import type { User } from '../lib/session.ts'
+import { useIsAdmin } from '../lib/role.tsx'
 import { useSaveStatus } from '../lib/sync.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
@@ -82,6 +83,7 @@ function Sidebar({
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
   const saveStatus = useSaveStatus()
+  const admin = useIsAdmin()
   const [periodOpen, setPeriodOpen] = useState(false)
   const org = useOrgList(employees)
 
@@ -105,12 +107,14 @@ function Sidebar({
           icon={<LayoutDashboard className="size-4" />}
           label="Дашборд"
         />
-        <NavButton
-          active={route.name === 'settings'}
-          onClick={() => onNavigate({ name: 'settings' })}
-          icon={<Settings className="size-4" />}
-          label="Настройки"
-        />
+        {admin ? (
+          <NavButton
+            active={route.name === 'settings'}
+            onClick={() => onNavigate({ name: 'settings' })}
+            icon={<Settings className="size-4" />}
+            label="Настройки"
+          />
+        ) : null}
       </nav>
       <p className="mt-6 px-5 text-[11px] font-semibold tracking-[0.16em] text-white/45 uppercase">Матрицы</p>
       <div className="mt-2 px-3">
@@ -150,6 +154,7 @@ function Sidebar({
         </button>
         <p className="mt-3 text-xs leading-relaxed text-white/45">Считается только КР. Оклады и премии не участвуют.</p>
         <p className="mt-3 truncate text-sm font-medium">{user.name}</p>
+        <p className="text-xs text-white/55">{admin ? 'Администратор' : 'Пользователь'}</p>
         <p className="truncate text-xs text-white/45">{user.email}</p>
         <p className="mt-1 text-xs text-white/45">
           {saveStatus === 'saving' ? 'Сохраняем…' : saveStatus === 'error' ? 'Не удалось сохранить' : 'Данные в базе'}

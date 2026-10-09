@@ -7,6 +7,7 @@ import { Shell } from './components/shell.tsx'
 import { ApiError, api } from './lib/api.ts'
 import { hrefFor, parseHash, type Route } from './lib/routes.ts'
 import type { User } from './lib/session.ts'
+import { RoleProvider } from './lib/role.tsx'
 import { clearTeamLocal, flushTeamSync, loadTeam, startTeamSync } from './lib/sync.ts'
 
 type Session =
@@ -24,6 +25,12 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  useEffect(() => {
+    if (session.status === 'in' && session.user.role !== 'admin' && route.name === 'settings') {
+      navigate({ name: 'dashboard' })
+    }
+  }, [route, session])
 
   useEffect(() => {
     if (session.status !== 'in') return
@@ -105,6 +112,7 @@ export default function App() {
   }
 
   return (
+    <RoleProvider role={session.user.role}>
     <Shell route={route} user={session.user} onNavigate={navigate} onLogout={() => void logout()}>
       {route.name === 'dashboard' ? (
         <Dashboard
@@ -115,7 +123,14 @@ export default function App() {
       {route.name === 'matrix' ? (
         <MatrixView employeeId={route.employeeId} onBack={() => navigate({ name: 'dashboard' })} />
       ) : null}
-      {route.name === 'settings' ? <SettingsView /> : null}
+      {route.name === 'settings' && session.user.role === 'admin' ? (
+        <SettingsView
+          onRoleChange={(user) => {
+            if (user.id === session.user.id) setSession({ status: 'in', user })
+          }}
+        />
+      ) : null}
     </Shell>
+    </RoleProvider>
   )
 }

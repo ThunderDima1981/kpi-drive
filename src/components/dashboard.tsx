@@ -6,6 +6,7 @@ import { useOrgList } from './use-org-list.ts'
 import { matrixResult } from '../lib/calc.ts'
 import { formatPercent, initials, peopleLabel, zoneOf, ZONES, type ZoneKey } from '../lib/format.ts'
 import type { OrgNode } from '../lib/org.ts'
+import { useIsAdmin } from '../lib/role.tsx'
 import { useTeamStore } from '../store/team-store.ts'
 
 export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: (id: string) => void; onOpenSettings: () => void }) {
@@ -14,6 +15,7 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
   const periodLabel = useTeamStore((state) => state.periodLabel)
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
+  const admin = useIsAdmin()
   const org = useOrgList(employees)
   const rows = employees
     .map((employee) => {
@@ -53,15 +55,19 @@ export function Dashboard({ onOpenEmployee, onOpenSettings }: { onOpenEmployee: 
         <section className="rounded-2xl border border-dashed border-line bg-card px-6 py-16 text-center">
           <h2 className="text-xl font-semibold">В команде пока никого</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-ink-soft">
-            Добавьте сотрудника, соберите матрицу на 100% веса и введите факт. КР пересчитается сразу.
+            {admin
+              ? 'Добавьте сотрудника, соберите матрицу и введите факт. КР пересчитается сразу.'
+              : 'Команду и матрицу собирает администратор. Здесь можно создавать smart-задачи и отмечать их выполненными.'}
           </p>
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="mt-5 rounded-lg bg-pine px-4 py-2 text-sm font-semibold text-primary-foreground"
-          >
-            Настроить команду
-          </button>
+          {admin ? (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="mt-5 rounded-lg bg-pine px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              Настроить команду
+            </button>
+          ) : null}
         </section>
       ) : (
         <>

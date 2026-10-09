@@ -25,5 +25,14 @@ export async function migrate() {
       document jsonb NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin';
+    UPDATE users SET role = 'admin' WHERE role IS NULL OR role NOT IN ('admin', 'user');
+  `)
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'user'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `)
 }

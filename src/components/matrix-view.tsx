@@ -17,6 +17,7 @@ import {
   weightedOf,
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, parseNumber, zoneOf, ZONES } from '../lib/format.ts'
+import { useIsAdmin } from '../lib/role.tsx'
 import { useTeamStore } from '../store/team-store.ts'
 import { SMART_STATUS_LABEL, smartCompletion, smartGroupCompletion } from '../lib/smart.ts'
 import type { CatalogKpi, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, SmartTask, StandardIndicator } from '../types.ts'
@@ -41,6 +42,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const [weightEdit, setWeightEdit] = useState<KpiIndicator | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [smartChart, setSmartChart] = useState(false)
+  const admin = useIsAdmin()
 
   if (!employee) {
     return (
@@ -125,6 +127,8 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
       {groups.map((group) => {
         const items = employee.indicators.filter((indicator) => indicator.type === group.type)
         const Icon = group.icon
+        const smartExists = employee.indicators.some((indicator) => indicator.type === 'smart')
+        const showAdd = group.type === 'smart' ? admin || smartExists : admin
         return (
           <section key={group.type} className="overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
             <header className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 md:px-5">
@@ -137,23 +141,26 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
                   <p className="mt-1 max-w-2xl text-sm text-ink-soft">{group.hint}</p>
                 </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  if (group.type === 'kpi') setAssignOpen(true)
-                  else if (group.type === 'smart') setEditor({ type: 'smart', task: null })
-                  else setEditor({ type: 'standard', indicator: null })
-                }}
-              >
-                <Plus />
-                {group.type === 'smart' ? 'Создать' : group.type === 'kpi' ? 'Из справочника' : 'Показатель'}
-              </Button>
+              {showAdd ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (group.type === 'kpi') setAssignOpen(true)
+                    else if (group.type === 'smart') setEditor({ type: 'smart', task: null })
+                    else setEditor({ type: 'standard', indicator: null })
+                  }}
+                >
+                  <Plus />
+                  {group.type === 'smart' ? 'Создать' : group.type === 'kpi' ? 'Из справочника' : 'Показатель'}
+                </Button>
+              ) : null}
             </header>
             {items.length === 0 && group.type !== 'smart' ? (
               <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">В этой группе пока нет показателей.</p>
             ) : group.type === 'kpi' ? (
               <KpiTable
+                admin={admin}
                 items={items.filter((item): item is KpiIndicator => item.type === 'kpi')}
                 catalog={kpiCatalog}
                 pendingDelete={pendingDelete}
@@ -168,6 +175,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
               />
             ) : group.type === 'smart' ? (
               <SmartBlock
+                admin={admin}
                 group={items.find((item): item is SmartIndicator => item.type === 'smart') ?? null}
                 matrixWeightSum={result.weightSum}
                 pendingDelete={pendingDelete}
@@ -188,6 +196,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
               />
             ) : (
               <StandardTable
+                admin={admin}
                 items={items.filter((item): item is StandardIndicator => item.type === 'standard')}
                 employees={employees}
                 pendingDelete={pendingDelete}
@@ -235,6 +244,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
 }
 
 function KpiTable({
+  admin,
   items,
   catalog,
   pendingDelete,
@@ -244,6 +254,7 @@ function KpiTable({
   onAskDelete,
   onDelete,
 }: {
+  admin: boolean
   items: KpiIndicator[]
   catalog: CatalogKpi[]
   pendingDelete: string | null
@@ -264,7 +275,7 @@ function KpiTable({
             <th className="bg-pine/5 px-3 py-3 font-medium">Факт</th>
             <th className="px-3 py-3 font-medium">% выполнения</th>
             <th className="px-3 py-3 font-medium">Взвешенный</th>
-            <th className="px-3 py-3 font-medium"><span className="sr-only">Действия</span></th>
+            {admin ? <th className="px-3 py-3 font-medium"><span className="sr-only">Действия</span></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -284,33 +295,39 @@ function KpiTable({
                 </td>
                 <td className="bg-pine/5 px-3 py-3">
                   {shared ? (
-                    <div className="flex items-center gap-2">
-                      <DecimalInput
-                        key={shared.id}
-                        value={shared.fact}
-                        ariaLabel={`Факт: ${shared.name}`}
-                        onValueChange={(fact) => onFact(shared.id, fact)}
-                        className="h-8 w-24 bg-white tabular-nums"
-                      />
-                      {shared.unit ? <span className="text-xs text-ink-soft">{shared.unit}</span> : null}
-                    </div>
+                    admin ? (
+                      <div className="flex items-center gap-2">
+                        <DecimalInput
+                          key={shared.id}
+                          value={shared.fact}
+                          ariaLabel={`Факт: ${shared.name}`}
+                          onValueChange={(fact) => onFact(shared.id, fact)}
+                          className="h-8 w-24 bg-white tabular-nums"
+                        />
+                        {shared.unit ? <span className="text-xs text-ink-soft">{shared.unit}</span> : null}
+                      </div>
+                    ) : (
+                      <Quantity value={shared.fact} unit={shared.unit} />
+                    )
                   ) : (
                     '—'
                   )}
                 </td>
                 <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator, catalog))}</td>
                 <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator, catalog))}</td>
-                <td className="px-3 py-3">
-                  <RowActions
-                    name={name}
-                    pending={pendingDelete === indicator.id}
-                    onChart={shared ? () => onChart(indicator.id) : undefined}
-                    onEdit={() => onEdit(indicator)}
-                    onAskDelete={() => onAskDelete(indicator.id)}
-                    onCancel={() => onAskDelete(null)}
-                    onDelete={() => onDelete(indicator.id)}
-                  />
-                </td>
+                {admin ? (
+                  <td className="px-3 py-3">
+                    <RowActions
+                      name={name}
+                      pending={pendingDelete === indicator.id}
+                      onChart={shared ? () => onChart(indicator.id) : undefined}
+                      onEdit={() => onEdit(indicator)}
+                      onAskDelete={() => onAskDelete(indicator.id)}
+                      onCancel={() => onAskDelete(null)}
+                      onDelete={() => onDelete(indicator.id)}
+                    />
+                  </td>
+                ) : null}
               </tr>
             )
           })}
@@ -377,13 +394,16 @@ function MatrixWeightField({
 function SmartAdvance({
   name,
   status,
+  admin,
   onStatus,
 }: {
   name: string
   status: SmartStatus
+  admin: boolean
   onStatus: (status: SmartStatus) => void
 }) {
   if (status === 'closed') return null
+  if (!admin && status === 'done') return null
   const markDone = status !== 'done'
   return (
     <Button
@@ -399,6 +419,7 @@ function SmartAdvance({
 }
 
 function SmartBlock({
+  admin,
   group,
   matrixWeightSum,
   pendingDelete,
@@ -410,6 +431,7 @@ function SmartBlock({
   onDeleteTask,
   onDeleteBlock,
 }: {
+  admin: boolean
   group: SmartIndicator | null
   matrixWeightSum: number
   pendingDelete: string | null
@@ -424,7 +446,9 @@ function SmartBlock({
   if (!group) {
     return (
       <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">
-        В матрице пока нет блока Smart-задач. Нажмите «Создать», задайте вес блока и первую задачу.
+        {admin
+          ? 'В матрице пока нет блока Smart-задач. Нажмите «Создать», задайте вес блока и первую задачу.'
+          : 'Блок Smart-задач добавляет администратор. После этого здесь можно создавать задачи и отмечать их выполненными.'}
       </p>
     )
   }
@@ -432,11 +456,18 @@ function SmartBlock({
   return (
     <div className="border-t border-line">
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3 px-4 py-4 md:px-5">
-        <MatrixWeightField
-          value={group.weight}
-          others={matrixWeightSum - group.weight}
-          onCommit={onWeight}
-        />
+        {admin ? (
+          <MatrixWeightField
+            value={group.weight}
+            others={matrixWeightSum - group.weight}
+            onCommit={onWeight}
+          />
+        ) : (
+          <div>
+            <p className="text-xs text-ink-soft">Вес в матрице</p>
+            <p className="text-lg font-semibold tabular-nums">{formatPercent(group.weight)}</p>
+          </div>
+        )}
         <div>
           <p className="text-xs text-ink-soft">Выполнено задач</p>
           <p className="text-lg font-semibold tabular-nums">{formatPercent(smartGroupCompletion(group))}</p>
@@ -449,24 +480,28 @@ function SmartBlock({
           <p className="text-xs text-ink-soft">Вклад в КР</p>
           <p className="text-lg font-semibold tabular-nums">{formatPercent(weightedOf(group))}</p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={onChart}>
-          <ChartLine />
-          График
-        </Button>
-        {blockPending ? (
-          <div className="flex gap-1">
-            <Button type="button" size="sm" variant="destructive" onClick={onDeleteBlock}>
+        {admin ? (
+          <Button type="button" variant="outline" size="sm" onClick={onChart}>
+            <ChartLine />
+            График
+          </Button>
+        ) : null}
+        {admin ? (
+          blockPending ? (
+            <div className="flex gap-1">
+              <Button type="button" size="sm" variant="destructive" onClick={onDeleteBlock}>
+                Удалить блок
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => onAskDelete(null)}>
+                Нет
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" size="sm" variant="ghost" onClick={() => onAskDelete(group.id)}>
               Удалить блок
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => onAskDelete(null)}>
-              Нет
-            </Button>
-          </div>
-        ) : (
-          <Button type="button" size="sm" variant="ghost" onClick={() => onAskDelete(group.id)}>
-            Удалить блок
-          </Button>
-        )}
+          )
+        ) : null}
       </div>
       {group.tasks.length === 0 ? (
         <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">
@@ -482,7 +517,7 @@ function SmartBlock({
                 <th className="px-3 py-3 font-medium">Статус</th>
                 <th className="px-3 py-3 font-medium">% выполнения</th>
                 <th className="px-3 py-3 font-medium">Вклад в smart</th>
-                <th className="px-3 py-3"><span className="sr-only">Действия</span></th>
+                {admin ? <th className="px-3 py-3"><span className="sr-only">Действия</span></th> : null}
               </tr>
             </thead>
             <tbody>
@@ -500,21 +535,23 @@ function SmartBlock({
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>{SMART_STATUS_LABEL[task.status]}</span>
-                        <SmartAdvance name={task.name} status={task.status} onStatus={(status) => onStatus(task.id, status)} />
+                        <SmartAdvance admin={admin} name={task.name} status={task.status} onStatus={(status) => onStatus(task.id, status)} />
                       </div>
                     </td>
                     <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completion)}</td>
                     <td className="px-3 py-3 tabular-nums">{formatPercent((completion * task.weight) / 100)}</td>
-                    <td className="px-3 py-3">
-                      <RowActions
-                        name={task.name}
-                        pending={pendingDelete === task.id}
-                        onEdit={() => onEdit(task)}
-                        onAskDelete={() => onAskDelete(task.id)}
-                        onCancel={() => onAskDelete(null)}
-                        onDelete={() => onDeleteTask(task.id)}
-                      />
-                    </td>
+                    {admin ? (
+                      <td className="px-3 py-3">
+                        <RowActions
+                          name={task.name}
+                          pending={pendingDelete === task.id}
+                          onEdit={() => onEdit(task)}
+                          onAskDelete={() => onAskDelete(task.id)}
+                          onCancel={() => onAskDelete(null)}
+                          onDelete={() => onDeleteTask(task.id)}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 )
               })}
@@ -527,6 +564,7 @@ function SmartBlock({
 }
 
 function StandardTable({
+  admin,
   items,
   employees,
   pendingDelete,
@@ -537,6 +575,7 @@ function StandardTable({
   onAskDelete,
   onDelete,
 }: {
+  admin: boolean
   items: StandardIndicator[]
   employees: { id: string; name: string }[]
   pendingDelete: string | null
@@ -559,7 +598,7 @@ function StandardTable({
             <th className="px-3 py-3 font-medium">Оценка</th>
             <th className="px-3 py-3 font-medium">% выполнения</th>
             <th className="px-3 py-3 font-medium">Взвешенный</th>
-            <th className="px-3 py-3"><span className="sr-only">Действия</span></th>
+            {admin ? <th className="px-3 py-3"><span className="sr-only">Действия</span></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -568,50 +607,62 @@ function StandardTable({
               <th className="px-4 py-3 text-left font-medium">{indicator.name}</th>
               <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
               <td className="px-3 py-3">
-                <select
-                  aria-label={`Оценщик: ${indicator.name}`}
-                  value={indicator.evaluatorId ?? ''}
-                  onChange={(event) => onEvaluator(indicator.id, event.target.value)}
-                  className="h-8 max-w-52 rounded-lg border border-line bg-white px-2 text-sm"
-                >
-                  {indicator.evaluatorId ? null : <option value="">Выберите сотрудника</option>}
-                  {people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td className="px-3 py-3">
-                <select
-                  aria-label={`Оценка: ${indicator.name}`}
-                  value={String(indicator.score)}
-                  onChange={(event) => onScore(indicator.id, Number(event.target.value))}
-                  className="h-8 rounded-lg border border-line bg-white px-2 text-sm"
-                >
-                  {indicator.points
-                    .slice()
-                    .sort((a, b) => a.score - b.score)
-                    .map((point) => (
-                      <option key={point.id} value={point.score}>
-                        {point.score > 0 ? `+${point.score}` : point.score} · {formatPercent(point.completion)}
+                {admin ? (
+                  <select
+                    aria-label={`Оценщик: ${indicator.name}`}
+                    value={indicator.evaluatorId ?? ''}
+                    onChange={(event) => onEvaluator(indicator.id, event.target.value)}
+                    className="h-8 max-w-52 rounded-lg border border-line bg-white px-2 text-sm"
+                  >
+                    {indicator.evaluatorId ? null : <option value="">Выберите сотрудника</option>}
+                    {people.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
                       </option>
                     ))}
-                </select>
+                  </select>
+                ) : (
+                  people.find((person) => person.id === indicator.evaluatorId)?.name ?? 'Не назначен'
+                )}
+              </td>
+              <td className="px-3 py-3">
+                {admin ? (
+                  <select
+                    aria-label={`Оценка: ${indicator.name}`}
+                    value={String(indicator.score)}
+                    onChange={(event) => onScore(indicator.id, Number(event.target.value))}
+                    className="h-8 rounded-lg border border-line bg-white px-2 text-sm"
+                  >
+                    {indicator.points
+                      .slice()
+                      .sort((a, b) => a.score - b.score)
+                      .map((point) => (
+                        <option key={point.id} value={point.score}>
+                          {point.score > 0 ? `+${point.score}` : point.score} · {formatPercent(point.completion)}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <span className="tabular-nums">
+                    {indicator.score > 0 ? `+${indicator.score}` : indicator.score}
+                  </span>
+                )}
               </td>
               <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator))}</td>
               <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator))}</td>
-              <td className="px-3 py-3">
-                <RowActions
-                  name={indicator.name}
-                  pending={pendingDelete === indicator.id}
-                  onChart={() => onChart(indicator.id)}
-                  onEdit={() => onEdit(indicator)}
-                  onAskDelete={() => onAskDelete(indicator.id)}
-                  onCancel={() => onAskDelete(null)}
-                  onDelete={() => onDelete(indicator.id)}
-                />
-              </td>
+              {admin ? (
+                <td className="px-3 py-3">
+                  <RowActions
+                    name={indicator.name}
+                    pending={pendingDelete === indicator.id}
+                    onChart={() => onChart(indicator.id)}
+                    onEdit={() => onEdit(indicator)}
+                    onAskDelete={() => onAskDelete(indicator.id)}
+                    onCancel={() => onAskDelete(null)}
+                    onDelete={() => onDelete(indicator.id)}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
