@@ -117,7 +117,7 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
       </div>
       <div className="relative border-t border-white/10 px-5 py-4">
         {periodOpen ? (
-          <div className="absolute right-3 bottom-full left-3 z-20 mb-2 rounded-2xl border border-line bg-paper p-3 text-ink shadow-xl">
+          <div className="absolute bottom-full left-3 z-20 mb-2 w-[20rem] rounded-2xl border border-line bg-paper p-3 text-ink shadow-xl">
             <PeriodCalendar
               value={currentPeriod}
               onChange={(id) => {

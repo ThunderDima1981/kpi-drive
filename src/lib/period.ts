@@ -16,8 +16,6 @@ export const MONTHS = [
   'Декабрь',
 ]
 
-export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-
 export function periodId(year: number, month: number) {
   return `${year}-${String(month).padStart(2, '0')}`
 }
@@ -44,22 +42,6 @@ export function parsePeriodLabel(label: string) {
   const month = MONTHS.findIndex((name) => lower.includes(name.toLocaleLowerCase('ru')))
   if (month < 0) return null
   return periodId(Number(year[0]), month + 1)
-}
-
-export function shiftPeriod(id: string, delta: number) {
-  const parsed = parsePeriodId(id)
-  if (!parsed) return id
-  const date = new Date(parsed.year, parsed.month - 1 + delta, 1)
-  return periodId(date.getFullYear(), date.getMonth() + 1)
-}
-
-export function calendarDays(year: number, month: number) {
-  const start = (new Date(year, month - 1, 1).getDay() + 6) % 7
-  const count = new Date(year, month, 0).getDate()
-  const cells: (number | null)[] = Array.from({ length: start }, () => null)
-  for (let day = 1; day <= count; day += 1) cells.push(day)
-  while (cells.length % 7 !== 0) cells.push(null)
-  return cells
 }
 
 export function publishPeriods(periods: TeamData['periods'], currentPeriod: string): TeamData {
