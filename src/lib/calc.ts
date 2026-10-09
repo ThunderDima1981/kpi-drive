@@ -1,6 +1,6 @@
 import { formatNumber } from './format.ts'
-import { smartGroupCompletion } from './smart.ts'
-import type { CatalogKpi, Indicator, KpiPoint, ScalePoint, StandardIndicator, StandardScore } from '../types.ts'
+import { defaultSmartPoints, smartGroupCompletion } from './smart.ts'
+import type { CatalogKpi, Indicator, KpiPoint, ScalePoint, SmartIndicator, StandardIndicator, StandardScore } from '../types.ts'
 
 export const DEFAULT_MAX_CAP = 130
 
@@ -202,12 +202,27 @@ export function findCatalogKpi(catalog: CatalogKpi[], catalogId: string) {
   return catalog.find((item) => item.id === catalogId) ?? null
 }
 
+export function smartInfluence(indicator: SmartIndicator) {
+  const points = indicator.points?.length >= 2 ? indicator.points : defaultSmartPoints()
+  return completionOnScale(smartGroupCompletion(indicator), points)
+}
+
+export function fitsMatrixWeight(
+  indicators: { id?: string; weight: number }[],
+  exceptId: string | undefined,
+  weight: number,
+) {
+  if (!Number.isFinite(weight) || weight <= 0) return false
+  const used = indicators.reduce((sum, item) => sum + (item.id === exceptId ? 0 : item.weight), 0)
+  return used + weight <= 100 + 1e-6
+}
+
 export function completionOf(indicator: Indicator, catalog: CatalogKpi[] = []): number {
   if (indicator.type === 'kpi') {
     const shared = findCatalogKpi(catalog, indicator.catalogId)
     return shared ? kpiCompletionOf(shared) : 0
   }
-  if (indicator.type === 'smart') return smartGroupCompletion(indicator)
+  if (indicator.type === 'smart') return smartInfluence(indicator)
   return completionOnScale(indicator.score, indicator.points ?? [])
 }
 
@@ -287,6 +302,32 @@ function formatScoreLabel(score: number) {
   if (score > 0) return `+${score}`
   if (score < 0) return `−${Math.abs(score)}`
   return '0'
+}
+
+export function explainSmart(indicator: SmartIndicator) {
+  const done = smartGroupCompletion(indicator)
+  const influence = roundLabel(smartInfluence(indicator))
+  const exact = (indicator.points ?? []).some((point) => nearlyEqual(point.score, done))
+  const where = exact ? 'Процент выполненных задач стоит на точке шкалы.' : 'Процент выполненных задач между точками шкалы.'
+  return `${where} Влияние на вес блока в матрице — ${influence}.`
+}
+
+export function smartSeries(indicator: SmartIndicator) {
+  const done = smartGroupCompletion(indicator)
+  const points = (indicator.points?.length >= 2 ? indicator.points : defaultSmartPoints())
+    .filter((point) => Number.isFinite(point.score) && Number.isFinite(point.completion))
+    .slice()
+    .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id))
+    .map((point) => ({
+      score: point.score,
+      completion: point.completion,
+      marker: nearlyEqual(point.score, done),
+    }))
+  if (!points.some((point) => point.marker)) {
+    points.push({ score: done, completion: smartInfluence(indicator), marker: true })
+    points.sort((a, b) => a.score - b.score || Number(a.marker) - Number(b.marker))
+  }
+  return points
 }
 
 export function kpiSeries(kpi: CatalogKpi) {

@@ -7,6 +7,7 @@ import { KpiAssignDialog, KpiWeightDialog } from './kpi-assign-dialog.tsx'
 import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
 import { KrGauge } from './kr-gauge.tsx'
 import { StandardScaleDialog } from './scale-dialog.tsx'
+import { SmartScaleDialog } from './smart-scale-dialog.tsx'
 import {
   completionOf,
   findCatalogKpi,
@@ -16,7 +17,7 @@ import {
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
-import { SMART_STATUS_LABEL, smartCompletion } from '../lib/smart.ts'
+import { SMART_STATUS_LABEL, smartCompletion, smartGroupCompletion } from '../lib/smart.ts'
 import type { CatalogKpi, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, SmartTask, StandardIndicator } from '../types.ts'
 
 export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack: () => void }) {
@@ -38,6 +39,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const [assignOpen, setAssignOpen] = useState(false)
   const [weightEdit, setWeightEdit] = useState<KpiIndicator | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [smartChart, setSmartChart] = useState(false)
 
   if (!employee) {
     return (
@@ -65,7 +67,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'smart',
       title: 'Smart-задачи',
-      hint: 'Один показатель матрицы со своим весом. У каждой задачи внутри свой вес: закрытая задача добавляет его в выполнение блока, остальные статусы дают 0%.',
+      hint: 'Один показатель матрицы со своим весом. Веса задач в сумме могут быть больше 100%. График переводит процент выполненных задач во влияние на вес блока.',
       icon: ListChecks,
     },
     {
@@ -166,7 +168,9 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
             ) : group.type === 'smart' ? (
               <SmartBlock
                 group={items.find((item): item is SmartIndicator => item.type === 'smart') ?? null}
+                matrixWeightSum={result.weightSum}
                 pendingDelete={pendingDelete}
+                onChart={() => setSmartChart(true)}
                 onWeight={(weight) => setSmartWeight(employee.id, weight)}
                 onStatus={(id, status) => setStatus(employee.id, id, status)}
                 onEdit={(task) => setEditor({ type: 'smart', task })}
@@ -220,6 +224,11 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
         onOpenChange={(open) => { if (!open) setChartId(null) }}
       />
       <StandardScaleDialog employeeId={employee.id} indicator={chart?.type === 'standard' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
+      <SmartScaleDialog
+        employeeId={employee.id}
+        indicator={smartChart ? employee.indicators.find((item): item is SmartIndicator => item.type === 'smart') ?? null : null}
+        onOpenChange={(open) => { if (!open) setSmartChart(false) }}
+      />
     </div>
   )
 }
@@ -336,7 +345,9 @@ function SmartAdvance({
 
 function SmartBlock({
   group,
+  matrixWeightSum,
   pendingDelete,
+  onChart,
   onWeight,
   onStatus,
   onEdit,
@@ -345,7 +356,9 @@ function SmartBlock({
   onDeleteBlock,
 }: {
   group: SmartIndicator | null
+  matrixWeightSum: number
   pendingDelete: string | null
+  onChart: () => void
   onWeight: (weight: number) => void
   onStatus: (id: string, status: SmartStatus) => void
   onEdit: (task: SmartTask) => void
@@ -360,8 +373,7 @@ function SmartBlock({
       </p>
     )
   }
-  const taskWeight = group.tasks.reduce((sum, task) => sum + task.weight, 0)
-  const tasksBalanced = group.tasks.length === 0 || Math.abs(taskWeight - 100) < 0.05
+  const [weightError, setWeightError] = useState('')
   const blockPending = pendingDelete === group.id
   return (
     <div className="border-t border-line">
@@ -371,18 +383,38 @@ function SmartBlock({
           <DecimalInput
             value={group.weight}
             ariaLabel="Вес smart-задач в матрице"
-            onValueChange={onWeight}
+            onValueChange={(weight) => {
+              const others = matrixWeightSum - group.weight
+              if (!Number.isFinite(weight) || weight <= 0) {
+                setWeightError('Вес — число больше 0.')
+                return
+              }
+              if (others + weight > 100 + 1e-6) {
+                setWeightError('Сумма весов матрицы не может быть больше 100%.')
+                return
+              }
+              setWeightError('')
+              onWeight(weight)
+            }}
             className="h-8 w-24 bg-white tabular-nums"
           />
         </label>
         <div>
-          <p className="text-xs text-ink-soft">Выполнение блока</p>
+          <p className="text-xs text-ink-soft">Выполнено задач</p>
+          <p className="text-lg font-semibold tabular-nums">{formatPercent(smartGroupCompletion(group))}</p>
+        </div>
+        <div>
+          <p className="text-xs text-ink-soft">Влияние на вес</p>
           <p className="text-lg font-semibold tabular-nums">{formatPercent(completionOf(group))}</p>
         </div>
         <div>
           <p className="text-xs text-ink-soft">Вклад в КР</p>
           <p className="text-lg font-semibold tabular-nums">{formatPercent(weightedOf(group))}</p>
         </div>
+        <Button type="button" variant="outline" size="sm" onClick={onChart}>
+          <ChartLine />
+          График
+        </Button>
         {blockPending ? (
           <div className="flex gap-1">
             <Button type="button" size="sm" variant="destructive" onClick={onDeleteBlock}>
@@ -398,11 +430,7 @@ function SmartBlock({
           </Button>
         )}
       </div>
-      {tasksBalanced ? null : (
-        <p className="px-4 pb-3 text-sm text-zone-amber md:px-5">
-          Сумма весов задач: {formatPercent(taskWeight)}. Для полного блока она должна быть 100%. Расчёт идёт по текущим весам.
-        </p>
-      )}
+      {weightError ? <p className="px-4 pb-3 text-sm text-destructive md:px-5">{weightError}</p> : null}
       {group.tasks.length === 0 ? (
         <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">
           В блоке пока нет задач. Вес в матрице сохранён, выполнение блока — 0%.

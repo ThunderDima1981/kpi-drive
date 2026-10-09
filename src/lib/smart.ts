@@ -1,4 +1,4 @@
-import type { Indicator, SmartComment, SmartIndicator, SmartStatus, SmartTask } from '../types.ts'
+import type { Indicator, ScalePoint, SmartComment, SmartIndicator, SmartStatus, SmartTask } from '../types.ts'
 
 export const SMART_STATUSES: SmartStatus[] = ['created', 'in_progress', 'done', 'closed']
 
@@ -21,6 +21,14 @@ export function smartGroupCompletion(indicator: SmartIndicator) {
   return indicator.tasks.reduce((sum, task) => sum + (smartCompletion(task.status) * task.weight) / 100, 0)
 }
 
+export function defaultSmartPoints(): ScalePoint[] {
+  return [
+    { id: 'smart-scale-0', score: 0, completion: 0 },
+    { id: 'smart-scale-100', score: 100, completion: 100 },
+    { id: 'smart-scale-200', score: 200, completion: 130 },
+  ]
+}
+
 export function normalizeIndicator(indicator: Indicator): Indicator {
   if (indicator.type !== 'smart') return indicator
   return normalizeSmart(indicator)
@@ -41,6 +49,7 @@ export function collapseSmartIndicators(indicators: Indicator[]): Indicator[] {
     type: 'smart',
     weight: total,
     tasks,
+    points: smarts[0]!.points.length >= 2 ? smarts[0]!.points : defaultSmartPoints(),
   }
   const result: Indicator[] = []
   let placed = false
@@ -77,6 +86,7 @@ function normalizeSmart(raw: SmartIndicator): SmartIndicator {
         const normalized = normalizeTask(task)
         return normalized ? [normalized] : []
       }),
+      points: normalizeSmartPoints(legacy.points),
     }
   }
   const task = normalizeTask({
@@ -94,7 +104,25 @@ function normalizeSmart(raw: SmartIndicator): SmartIndicator {
     type: 'smart',
     weight: finite(legacy.weight),
     tasks: task ? [task] : [],
+    points: normalizeSmartPoints(legacy.points),
   }
+}
+
+function normalizeSmartPoints(value: unknown): ScalePoint[] {
+  if (!Array.isArray(value)) return defaultSmartPoints()
+  const points = value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const point = item as Partial<ScalePoint>
+    if (!Number.isFinite(point.score) || !Number.isFinite(point.completion)) return []
+    return [
+      {
+        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        score: point.score as number,
+        completion: point.completion as number,
+      },
+    ]
+  })
+  return points.length >= 2 ? points : defaultSmartPoints()
 }
 
 function normalizeTask(raw: unknown): SmartTask | null {

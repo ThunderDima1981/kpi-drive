@@ -46,6 +46,7 @@ export interface SmartIndicator {
   type: 'smart'
   weight: number
   tasks: SmartTask[]
+  points: ScalePoint[]
 }
 
 export interface ScalePoint {

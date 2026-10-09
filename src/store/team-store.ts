@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
-import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, DEFAULT_MAX_CAP } from '../lib/calc.ts'
+import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, DEFAULT_MAX_CAP, fitsMatrixWeight } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
-import { collapseSmartIndicators, normalizeIndicator } from '../lib/smart.ts'
+import { collapseSmartIndicators, defaultSmartPoints, normalizeIndicator } from '../lib/smart.ts'
 import type { CatalogKpi, Employee, Indicator, KpiIndicator, SmartComment, SmartStatus, SmartTask, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
@@ -247,15 +247,22 @@ export const useTeamStore = create<TeamState>()(
         }),
       addIndicator: (employeeId, indicator) =>
         set((state) => ({
-          employees: state.employees.map((employee) =>
-            employee.id === employeeId
-              ? { ...employee, indicators: [...employee.indicators, indicator] }
-              : employee,
-          ),
+          employees: state.employees.map((employee) => {
+            if (employee.id !== employeeId) return employee
+            if (!fitsMatrixWeight(employee.indicators, undefined, indicator.weight)) return employee
+            return { ...employee, indicators: [...employee.indicators, indicator] }
+          }),
         })),
       updateIndicator: (employeeId, indicator) =>
         set((state) => ({
-          employees: mapIndicator(state.employees, employeeId, indicator.id, () => indicator),
+          employees: state.employees.map((employee) => {
+            if (employee.id !== employeeId) return employee
+            if (!fitsMatrixWeight(employee.indicators, indicator.id, indicator.weight)) return employee
+            return {
+              ...employee,
+              indicators: employee.indicators.map((item) => (item.id === indicator.id ? indicator : item)),
+            }
+          }),
         })),
       removeIndicator: (employeeId, indicatorId) =>
         set((state) => ({
@@ -295,13 +302,14 @@ export const useTeamStore = create<TeamState>()(
       assignKpi: (employeeId, catalogId, weight) =>
         set((state) => {
           if (!state.kpiCatalog.some((item) => item.id === catalogId)) return state
-          if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return state
+          if (!Number.isFinite(weight) || weight <= 0) return state
           return {
             employees: state.employees.map((employee) => {
               if (employee.id !== employeeId) return employee
               if (employee.indicators.some((indicator) => indicator.type === 'kpi' && indicator.catalogId === catalogId)) {
                 return employee
               }
+              if (!fitsMatrixWeight(employee.indicators, undefined, weight)) return employee
               return {
                 ...employee,
                 indicators: [...employee.indicators, { id: uid(), type: 'kpi', catalogId, weight }],
@@ -311,10 +319,12 @@ export const useTeamStore = create<TeamState>()(
         }),
       setSmartWeight: (employeeId, weight) =>
         set((state) => {
-          if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return state
+          if (!Number.isFinite(weight) || weight <= 0) return state
           return {
             employees: state.employees.map((employee) => {
               if (employee.id !== employeeId) return employee
+              const group = employee.indicators.find((indicator) => indicator.type === 'smart')
+              if (!group || !fitsMatrixWeight(employee.indicators, group.id, weight)) return employee
               return {
                 ...employee,
                 indicators: employee.indicators.map((indicator) =>
@@ -338,14 +348,18 @@ export const useTeamStore = create<TeamState>()(
                 ),
               }
             }
-            if (matrixWeight === undefined || !Number.isFinite(matrixWeight) || matrixWeight <= 0 || matrixWeight > 100) {
+            if (
+              matrixWeight === undefined ||
+              !Number.isFinite(matrixWeight) ||
+              !fitsMatrixWeight(employee.indicators, undefined, matrixWeight)
+            ) {
               return employee
             }
             return {
               ...employee,
               indicators: [
                 ...employee.indicators,
-                { id: uid(), type: 'smart', weight: matrixWeight, tasks: [task] },
+                { id: uid(), type: 'smart', weight: matrixWeight, tasks: [task], points: defaultSmartPoints() },
               ],
             }
           }),

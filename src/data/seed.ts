@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_CAP, defaultStandardPoints, pointsFromLegacyScale } from '../lib/calc.ts'
+import { defaultSmartPoints } from '../lib/smart.ts'
 import type {
   CatalogKpi,
   Employee,
@@ -29,7 +30,7 @@ function smart(
     status,
     comments,
   }
-  return { id, type: 'smart', weight, tasks: [task] }
+  return { id, type: 'smart', weight, tasks: [task], points: defaultSmartPoints() }
 }
 
 function standard(

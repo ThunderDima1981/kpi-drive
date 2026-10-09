@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { defaultStandardPoints } from '../lib/calc.ts'
+import { defaultStandardPoints, fitsMatrixWeight } from '../lib/calc.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
 import { useTeamStore } from '../store/team-store.ts'
@@ -136,14 +136,25 @@ export function IndicatorDialog({
     const name = draft.name.trim()
     const weight = parseNumber(draft.weight)
     if (!name) nextErrors.name = 'Введите название.'
-    if (weight === null || weight <= 0 || weight > 100) {
-      nextErrors.weight = indicatorType === 'smart' ? 'Вес задачи — число больше 0 и не больше 100.' : 'Вес — число больше 0 и не больше 100.'
+    if (indicatorType === 'smart') {
+      if (weight === null || weight <= 0) nextErrors.weight = 'Вес задачи — число больше 0.'
+    } else if (weight === null || weight <= 0 || weight > 100) {
+      nextErrors.weight = 'Вес — число больше 0 и не больше 100.'
+    } else if (employee && !fitsMatrixWeight(employee.indicators, initial?.id, weight)) {
+      nextErrors.weight = 'Сумма весов матрицы не может быть больше 100%.'
     }
 
     if (indicatorType === 'smart') {
       const matrixWeight = parseNumber(draft.matrixWeight)
       if (!smartGroup && (matrixWeight === null || matrixWeight <= 0 || matrixWeight > 100)) {
         nextErrors.matrixWeight = 'Вес блока — число больше 0 и не больше 100.'
+      } else if (
+        !smartGroup &&
+        matrixWeight !== null &&
+        employee &&
+        !fitsMatrixWeight(employee.indicators, undefined, matrixWeight)
+      ) {
+        nextErrors.matrixWeight = 'Сумма весов матрицы не может быть больше 100%.'
       }
       if (Object.keys(nextErrors).length > 0 || weight === null) {
         setErrors(nextErrors)
@@ -199,8 +210,8 @@ export function IndicatorDialog({
             <DialogTitle>{dialogTitle(initial, defaultType, smartTask)}</DialogTitle>
             <DialogDescription>
               {indicatorType === 'smart'
-                ? 'Вес задачи задаёт её долю в блоке. Выполнение блока — сумма долей закрытых задач, и уже этот блок своим весом входит в КР.'
-                : 'Вес входит в сумму 100%. КР считается как выполнение, умноженное на вес.'}
+                ? 'Вес задачи входит в процент выполненных задач. Сумма весов задач может быть больше 100%. График блока переводит этот процент во влияние на вес в матрице.'
+                : 'Вес входит в сумму матрицы. Сумма может быть меньше 100% и не может быть больше.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -221,7 +232,7 @@ export function IndicatorDialog({
                 onValueChange={(weight) => setDraft((current) => ({ ...current, weight }))}
               />
               {indicatorType === 'smart' ? (
-                <p className={cn('text-xs', Math.abs(nextTaskSum - 100) < 0.05 ? 'text-zone-green' : 'text-zone-amber')}>
+                <p className="text-xs text-ink-soft">
                   После сохранения сумма весов задач будет {formatPercent(nextTaskSum)}.
                 </p>
               ) : (

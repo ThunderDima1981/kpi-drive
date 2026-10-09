@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { defaultKpiPoints, findCatalogKpi, kpiCompletionOf, planPoint } from '../lib/calc.ts'
+import { defaultKpiPoints, findCatalogKpi, fitsMatrixWeight, kpiCompletionOf, planPoint } from '../lib/calc.ts'
 import { formatNumber, formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { KpiIndicator } from '../types.ts'
@@ -63,6 +63,10 @@ export function KpiAssignDialog({
     const parsed = parseNumber(weight)
     if (parsed === null || parsed <= 0 || parsed > 100) {
       setError('Вес — число больше 0 и не больше 100.')
+      return
+    }
+    if (employee && !fitsMatrixWeight(employee.indicators, undefined, parsed)) {
+      setError('Сумма весов матрицы не может быть больше 100%.')
       return
     }
     if (creating) {
@@ -221,9 +225,11 @@ function WeightForm({
   indicator: KpiIndicator
   onOpenChange: (open: boolean) => void
 }) {
+  const employees = useTeamStore((state) => state.employees)
   const kpiCatalog = useTeamStore((state) => state.kpiCatalog)
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
   const shared = findCatalogKpi(kpiCatalog, indicator.catalogId)
+  const employee = employees.find((item) => item.id === employeeId)
   const [weight, setWeight] = useState(String(indicator.weight))
   const [error, setError] = useState('')
 
@@ -233,6 +239,10 @@ function WeightForm({
     const parsed = parseNumber(weight)
     if (parsed === null || parsed <= 0 || parsed > 100) {
       setError('Вес — число больше 0 и не больше 100.')
+      return
+    }
+    if (employee && !fitsMatrixWeight(employee.indicators, indicator.id, parsed)) {
+      setError('Сумма весов матрицы не может быть больше 100%.')
       return
     }
     updateIndicator(employeeId, { ...indicator, weight: parsed })

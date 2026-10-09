@@ -3,7 +3,9 @@ import { createSeed } from '../data/seed.ts'
 import {
   completionOf,
   explainKpi,
+  explainSmart,
   explainStandard,
+  fitsMatrixWeight,
   kpiCompletion,
   kpiCompletionOf,
   matrixResult,
@@ -15,7 +17,7 @@ import {
   weightedOf,
   type KpiScale,
 } from './calc.ts'
-import { collapseSmartIndicators, normalizeIndicator, smartCompletion } from './smart.ts'
+import { collapseSmartIndicators, defaultSmartPoints, normalizeIndicator, smartCompletion, smartGroupCompletion } from './smart.ts'
 import type { CatalogKpi } from '../types.ts'
 
 function leads(fact: number, extra: Partial<KpiScale> = {}): KpiScale {
@@ -173,6 +175,7 @@ describe('smart tasks', () => {
       id: 'smart',
       type: 'smart' as const,
       weight: 30,
+      points: defaultSmartPoints(),
       tasks: [
         { id: 'a', name: 'A', weight: 60, detail: '', criterion: '', status: 'closed' as const, comments: [] },
         { id: 'b', name: 'B', weight: 40, detail: '', criterion: '', status: 'done' as const, comments: [] },
@@ -194,6 +197,34 @@ describe('smart tasks', () => {
     expect(smart.weight).toBe(50)
     expect(smart.tasks.map((task) => task.weight)).toEqual([60, 40])
     expect(weightedOf(smart)).toBe(30)
+  })
+
+  it('turns a smart completion above 100% into influence on the matrix weight', () => {
+    const block = {
+      id: 'smart',
+      type: 'smart' as const,
+      weight: 30,
+      points: defaultSmartPoints(),
+      tasks: [
+        { id: 'a', name: 'A', weight: 150, detail: '', criterion: '', status: 'closed' as const, comments: [] },
+      ],
+    }
+    expect(smartGroupCompletion(block)).toBe(150)
+    expect(completionOf(block)).toBe(115)
+    expect(weightedOf(block)).toBe(34.5)
+    expect(explainSmart(block)).toMatch(/115%/)
+  })
+
+  it('keeps a matrix weight at or below 100%', () => {
+    const indicators = [
+      { id: 'kpi', weight: 70 },
+      { id: 'smart', weight: 30 },
+    ]
+    expect(fitsMatrixWeight(indicators, 'smart', 30)).toBe(true)
+    expect(fitsMatrixWeight(indicators, 'smart', 20)).toBe(true)
+    expect(fitsMatrixWeight(indicators, 'smart', 31)).toBe(false)
+    expect(fitsMatrixWeight([{ id: 'kpi', weight: 80 }], undefined, 20)).toBe(true)
+    expect(fitsMatrixWeight([{ id: 'kpi', weight: 80 }], undefined, 21)).toBe(false)
   })
 })
 
