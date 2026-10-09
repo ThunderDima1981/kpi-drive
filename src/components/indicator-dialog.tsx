@@ -19,6 +19,14 @@ import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/sm
 import { useTeamStore } from '../store/team-store.ts'
 import type { Indicator, IndicatorType, KpiIndicator, SmartComment, SmartStatus, StandardScore } from '../types.ts'
 
+function dialogTitle(initial: Indicator | null, defaultType: IndicatorType) {
+  if (!initial && defaultType === 'smart') return 'Новая smart-задача'
+  if (initial?.type === 'smart') return 'Smart-задача'
+  if (initial?.type === 'kpi') return 'Количественный KPI'
+  if (initial?.type === 'standard') return 'Стандарт'
+  return initial ? 'Показатель матрицы' : 'Новый показатель'
+}
+
 const TYPE_OPTIONS: { id: IndicatorType; label: string; hint: string }[] = [
   { id: 'kpi', label: 'Количественный KPI', hint: 'Порог, план и максимум' },
   { id: 'smart', label: 'Smart-задача', hint: 'Статус вместо прогресса' },
@@ -136,7 +144,8 @@ export function IndicatorDialog({
   const [commentText, setCommentText] = useState('')
   const [commentError, setCommentError] = useState('')
 
-  const smartOnly = initial?.type === 'smart' || (!initial && defaultType === 'smart')
+  const typeLocked = Boolean(initial) || defaultType === 'smart'
+  const lockedType = initial?.type ?? (defaultType === 'smart' ? 'smart' : draft.type)
   const employee = employees.find((item) => item.id === employeeId)
   const parsedWeight = parseNumber(draft.weight)
   const otherWeight =
@@ -156,7 +165,8 @@ export function IndicatorDialog({
     }
 
     let indicator: Indicator | null = null
-    if (draft.type === 'kpi') {
+    const type = initial ? initial.type : draft.type
+    if (type === 'kpi') {
       const threshold = parseNumber(draft.threshold)
       const plan = parseNumber(draft.plan)
       const maximum = parseNumber(draft.maximum)
@@ -193,7 +203,7 @@ export function IndicatorDialog({
         if (order) nextErrors.scale = order
         else indicator = candidate
       }
-    } else if (draft.type === 'smart' && weight !== null) {
+    } else if (type === 'smart' && weight !== null) {
       indicator = {
         id: initial?.id ?? crypto.randomUUID(),
         type: 'smart',
@@ -235,16 +245,14 @@ export function IndicatorDialog({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
         <form className="flex max-h-[min(92vh,860px)] min-h-0 flex-col" onSubmit={save}>
           <DialogHeader className="px-4 pt-4 pr-12">
-            <DialogTitle>
-              {smartOnly ? (initial ? 'Smart-задача' : 'Новая smart-задача') : initial ? 'Показатель матрицы' : 'Новый показатель'}
-            </DialogTitle>
+            <DialogTitle>{dialogTitle(initial, defaultType)}</DialogTitle>
             <DialogDescription>
               Вес входит в сумму 100%. КР считается как выполнение, умноженное на вес.
             </DialogDescription>
           </DialogHeader>
 
           <div className="mt-4 grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4">
-            {smartOnly ? null : (
+            {typeLocked ? null : (
             <div className="grid gap-2 sm:grid-cols-3">
               {TYPE_OPTIONS.map((option) => (
                 <button
@@ -291,7 +299,7 @@ export function IndicatorDialog({
               </p>
             </Field>
 
-            {draft.type === 'kpi' ? (
+            {lockedType === 'kpi' ? (
               <>
                 <div className="flex items-start gap-3 rounded-xl border border-line px-3 py-3">
                   <Checkbox
@@ -361,7 +369,7 @@ export function IndicatorDialog({
               </>
             ) : null}
 
-            {draft.type === 'smart' ? (
+            {lockedType === 'smart' ? (
               <SmartFields
                 draft={draft}
                 statusEditable={Boolean(initial)}
@@ -391,7 +399,7 @@ export function IndicatorDialog({
               />
             ) : null}
 
-            {draft.type === 'standard' ? (
+            {lockedType === 'standard' ? (
               <div className="grid gap-4">
                 <Field label="Оценщик" error={errors.evaluator}>
                   <select
