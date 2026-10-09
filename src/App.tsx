@@ -125,9 +125,11 @@ export default function App() {
       ) : null}
       {route.name === 'settings' && session.user.role === 'admin' ? (
         <SettingsView
-          onRoleChange={(user) => {
+          currentUserId={session.user.id}
+          onAccountChange={(user) => {
             if (user.id === session.user.id) setSession({ status: 'in', user })
           }}
+          onSelfRemoved={() => void logout()}
         />
       ) : null}
     </Shell>

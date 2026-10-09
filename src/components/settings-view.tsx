@@ -1,20 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KpiCatalogSection } from './kpi-catalog.tsx'
 import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
+import { UsersSection } from './users-section.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { initials } from '../lib/format.ts'
 import { managerChoices, type OrgNode } from '../lib/org.ts'
-import { api } from '../lib/api.ts'
 import type { User } from '../lib/session.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { Employee } from '../types.ts'
-import type { Role } from '../lib/access.ts'
 
-export function SettingsView({ onRoleChange }: { onRoleChange: (user: User) => void }) {
+export function SettingsView({
+  currentUserId,
+  onAccountChange,
+  onSelfRemoved,
+}: {
+  currentUserId: string
+  onAccountChange: (user: User) => void
+  onSelfRemoved: () => void
+}) {
   const employees = useTeamStore((state) => state.employees)
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
@@ -88,71 +95,8 @@ export function SettingsView({ onRoleChange }: { onRoleChange: (user: User) => v
       </section>
 
       <KpiCatalogSection />
-      <UsersSection onRoleChange={onRoleChange} />
+      <UsersSection currentUserId={currentUserId} onAccountChange={onAccountChange} onSelfRemoved={onSelfRemoved} />
     </div>
-  )
-}
-
-function UsersSection({ onRoleChange }: { onRoleChange: (user: User) => void }) {
-  const [users, setUsers] = useState<User[]>([])
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    void api<{ users: User[] }>('/api/users')
-      .then((result) => {
-        if (!cancelled) setUsers(result.users)
-      })
-      .catch(() => {
-        if (!cancelled) setError('Не удалось загрузить список пользователей.')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  async function changeRole(user: User, role: Role) {
-    setError('')
-    try {
-      const result = await api<{ user: User }>(`/api/users/${user.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role }),
-      })
-      setUsers((items) => items.map((item) => (item.id === result.user.id ? result.user : item)))
-      onRoleChange(result.user)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Не удалось изменить права.')
-    }
-  }
-
-  return (
-    <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-      <h2 className="font-semibold">Права пользователей</h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        Администратор ведёт настройки и матрицу. Пользователь может только создавать smart-задачи и ставить статус «Выполнено».
-      </p>
-      {users.length === 0 ? <p className="mt-4 text-sm text-ink-soft">Пользователей пока нет.</p> : null}
-      <ul className="mt-4 grid gap-3">
-        {users.map((user) => (
-          <li key={user.id} className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-[1fr_14rem] sm:items-center">
-            <div>
-              <p className="font-medium">{user.name}</p>
-              <p className="text-sm text-ink-soft">{user.email}</p>
-            </div>
-            <select
-              aria-label={`Права: ${user.name}`}
-              value={user.role}
-              onChange={(event) => void changeRole(user, event.target.value === 'user' ? 'user' : 'admin')}
-              className="h-9 rounded-lg border border-input bg-white px-2 text-sm"
-            >
-              <option value="admin">Администратор</option>
-              <option value="user">Пользователь</option>
-            </select>
-          </li>
-        ))}
-      </ul>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-    </section>
   )
 }
 

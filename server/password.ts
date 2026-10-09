@@ -9,6 +9,13 @@ export async function hashPassword(password: string) {
   return `scrypt$${salt}$${hash}`
 }
 
+const TEMP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+
+export function temporaryPassword(length = 12) {
+  const bytes = randomBytes(length)
+  return Array.from(bytes, (byte) => TEMP_ALPHABET[byte % TEMP_ALPHABET.length] ?? 'a').join('')
+}
+
 export async function verifyPassword(password: string, stored: string) {
   const [algo, salt, hash] = stored.split('$')
   if (algo !== 'scrypt' || !salt || !hash) return false

@@ -6,7 +6,7 @@ import { isRole, userChangeAllowed } from '../src/lib/access.ts'
 import { emptyTeam } from '../src/lib/period.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
-import { hashPassword, verifyPassword } from './password.ts'
+import { hashPassword, temporaryPassword, verifyPassword } from './password.ts'
 import type { TeamData } from '../src/types.ts'
 
 const SESSION = 'kpi_session'
@@ -80,39 +80,110 @@ app.get('/api/auth/me', async (c) => {
 })
 
 app.get('/api/users', async (c) => {
-  const user = await currentUser(c)
-  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  if (user.role !== 'admin') return c.json({ error: 'Это может только администратор.' }, 403)
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
   const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
     'SELECT id, email, name, role FROM users ORDER BY name, email',
   )
   return c.json({ users: found.rows.map(publicUser) })
 })
 
-app.patch('/api/users/:id', async (c) => {
-  const user = await currentUser(c)
-  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  if (user.role !== 'admin') return c.json({ error: 'Это может только администратор.' }, 403)
+app.post('/api/users', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
   const body = await readJson(c)
-  const role = body && 'role' in body ? body.role : null
+  const email = emailOf(body)
+  const name = nameOf(body?.name)
+  const passwordIssue = passwordIssueOf(body?.password)
+  const role = body && 'role' in body && body.role != null ? body.role : 'admin'
+  if (!email) return c.json({ error: 'Укажите почту.' }, 400)
+  if (!name) return c.json({ error: 'Укажите имя.' }, 400)
+  if (passwordIssue) return c.json({ error: passwordIssue }, 400)
   if (!isRole(role)) return c.json({ error: 'Неизвестные права.' }, 400)
-  const id = c.req.param('id')
-  if (role === 'user') {
-    const admins = await pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM users WHERE role = 'admin' AND id <> $1`,
-      [id],
-    )
-    if (Number(admins.rows[0]?.count ?? 0) === 0) {
-      return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
-    }
+  const id = crypto.randomUUID()
+  const passwordHash = await hashPassword(body?.password as string)
+  try {
+    await pool.query('INSERT INTO users (id, email, name, password_hash, role) VALUES ($1, $2, $3, $4, $5)', [
+      id,
+      email,
+      name,
+      passwordHash,
+      role,
+    ])
+  } catch (error) {
+    if (isUniqueViolation(error)) return c.json({ error: 'Такая почта уже зарегистрирована.' }, 409)
+    throw error
   }
-  const updated = await pool.query<{ id: string; email: string; name: string; role: string }>(
-    'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, email, name, role',
-    [id, role],
-  )
-  const next = updated.rows[0]
-  if (!next) return c.json({ error: 'Пользователь не найден.' }, 404)
-  return c.json({ user: publicUser(next) })
+  await pool.query('INSERT INTO teams (user_id, document) VALUES ($1, $2::jsonb)', [id, JSON.stringify(emptyTeam())])
+  return c.json({ user: { id, email, name, role } }, 201)
+})
+
+app.patch('/api/users/:id', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  const body = await readJson(c)
+  const id = c.req.param('id')
+  const existing = await findUser(id)
+  if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
+  const name = body && 'name' in body ? nameOf(body.name) : existing.name
+  const email = body && 'email' in body ? emailOf(body) : existing.email
+  const role = body && 'role' in body ? body.role : existing.role
+  if (body && 'name' in body && !name) return c.json({ error: 'Укажите имя.' }, 400)
+  if (body && 'email' in body && !email) return c.json({ error: 'Укажите почту.' }, 400)
+  if (!isRole(role)) return c.json({ error: 'Неизвестные права.' }, 400)
+  if (!name || !email) return c.json({ error: 'Укажите имя и почту.' }, 400)
+  if (role === 'user' && !(await anotherAdminExists(id))) {
+    return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
+  }
+  try {
+    const updated = await pool.query<{ id: string; email: string; name: string; role: string }>(
+      'UPDATE users SET name = $2, email = $3, role = $4 WHERE id = $1 RETURNING id, email, name, role',
+      [id, name, email, role],
+    )
+    const next = updated.rows[0]
+    if (!next) return c.json({ error: 'Пользователь не найден.' }, 404)
+    return c.json({ user: publicUser(next) })
+  } catch (error) {
+    if (isUniqueViolation(error)) return c.json({ error: 'Такая почта уже зарегистрирована.' }, 409)
+    throw error
+  }
+})
+
+app.post('/api/users/:id/password', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  const body = await readJson(c)
+  const passwordIssue = passwordIssueOf(body?.password)
+  if (passwordIssue) return c.json({ error: passwordIssue }, 400)
+  const id = c.req.param('id')
+  const existing = await findUser(id)
+  if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
+  await replacePassword(id, body?.password as string, id === actor.user.id ? getCookie(c, SESSION) : undefined)
+  return c.json({ user: existing })
+})
+
+app.post('/api/users/:id/reset-password', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  const id = c.req.param('id')
+  const existing = await findUser(id)
+  if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
+  const password = temporaryPassword()
+  await replacePassword(id, password, id === actor.user.id ? getCookie(c, SESSION) : undefined)
+  return c.json({ user: existing, password })
+})
+
+app.delete('/api/users/:id', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  const id = c.req.param('id')
+  const existing = await findUser(id)
+  if (!existing) return c.json({ error: 'Пользователь не найден.' }, 404)
+  if (existing.role === 'admin' && !(await anotherAdminExists(id))) {
+    return c.json({ error: 'Должен остаться хотя бы один администратор.' }, 400)
+  }
+  await pool.query('DELETE FROM users WHERE id = $1', [id])
+  return c.json({ ok: true })
 })
 
 app.get('/api/team', async (c) => {
@@ -146,6 +217,53 @@ app.put('/api/team', async (c) => {
   )
   return c.json(body)
 })
+
+async function requireAdmin(c: Parameters<typeof currentUser>[0]) {
+  const user = await currentUser(c)
+  if (!user) return { user: null, status: 401 as const, error: 'Нужно войти.' }
+  if (user.role !== 'admin') return { user: null, status: 403 as const, error: 'Это может только администратор.' }
+  return { user, status: 200 as const, error: '' }
+}
+
+async function findUser(id: string) {
+  const found = await pool.query<{ id: string; email: string; name: string; role: string }>(
+    'SELECT id, email, name, role FROM users WHERE id = $1',
+    [id],
+  )
+  const user = found.rows[0]
+  return user ? publicUser(user) : null
+}
+
+async function anotherAdminExists(exceptId: string) {
+  const admins = await pool.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM users WHERE role = 'admin' AND id <> $1`,
+    [exceptId],
+  )
+  return Number(admins.rows[0]?.count ?? 0) > 0
+}
+
+async function replacePassword(userId: string, password: string, keepToken: string | undefined) {
+  const passwordHash = await hashPassword(password)
+  await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, passwordHash])
+  if (keepToken) {
+    await pool.query('DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2', [userId, tokenHash(keepToken)])
+  } else {
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [userId])
+  }
+}
+
+function nameOf(value: unknown) {
+  if (typeof value !== 'string') return null
+  const name = value.trim()
+  if (name.length < 2 || name.length > 120) return null
+  return name
+}
+
+function passwordIssueOf(value: unknown) {
+  if (typeof value !== 'string' || value.length < 8) return 'Пароль должен быть не короче 8 символов.'
+  if (value.length > 72) return 'Пароль слишком длинный.'
+  return null
+}
 
 function emailOf(body: { email?: unknown } | null) {
   if (typeof body?.email !== 'string') return null
