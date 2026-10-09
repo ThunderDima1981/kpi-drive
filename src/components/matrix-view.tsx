@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, ChartLine, Check, ListChecks, Pencil, Plus, ShieldCheck, Target, Trash, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { DecimalInput } from './decimal-input.tsx'
 import { IndicatorDialog } from './indicator-dialog.tsx'
 import { KpiAssignDialog, KpiWeightDialog } from './kpi-assign-dialog.tsx'
@@ -15,7 +16,7 @@ import {
   planPoint,
   weightedOf,
 } from '../lib/calc.ts'
-import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
+import { formatNumber, formatPercent, initials, parseNumber, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import { SMART_STATUS_LABEL, smartCompletion, smartGroupCompletion } from '../lib/smart.ts'
 import type { CatalogKpi, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, SmartTask, StandardIndicator } from '../types.ts'
@@ -319,6 +320,60 @@ function KpiTable({
   )
 }
 
+function MatrixWeightField({
+  value,
+  others,
+  onCommit,
+}: {
+  value: number
+  others: number
+  onCommit: (weight: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  function commit(raw: string) {
+    setDraft(null)
+    const parsed = parseNumber(raw)
+    if (parsed === null || parsed <= 0) {
+      setError('Вес — число больше 0.')
+      return
+    }
+    if (others + parsed > 100 + 1e-6) {
+      setError('Сумма весов матрицы не может быть больше 100%.')
+      return
+    }
+    setError('')
+    if (parsed !== value) onCommit(parsed)
+  }
+
+  return (
+    <label className="grid gap-1.5 text-sm font-medium">
+      Вес в матрице, %
+      <Input
+        aria-label="Вес smart-задач в матрице"
+        inputMode="decimal"
+        aria-invalid={Boolean(error)}
+        value={draft ?? String(value)}
+        className="h-8 w-24 bg-white tabular-nums"
+        onFocus={() => {
+          setDraft(String(value))
+          setError('')
+        }}
+        onValueChange={(next) => {
+          setDraft(next)
+          const parsed = parseNumber(next)
+          if (parsed !== null && parsed > 0 && others + parsed > 100 + 1e-6) {
+            setError('Сумма весов матрицы не может быть больше 100%.')
+          } else setError('')
+        }}
+        onBlur={(event) => commit((event.target as HTMLInputElement).value)}
+      />
+      {error ? <span className="max-w-64 text-xs font-normal text-destructive">{error}</span> : null}
+    </label>
+  )
+}
+
 function SmartAdvance({
   name,
   status,
@@ -373,32 +428,15 @@ function SmartBlock({
       </p>
     )
   }
-  const [weightError, setWeightError] = useState('')
   const blockPending = pendingDelete === group.id
   return (
     <div className="border-t border-line">
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3 px-4 py-4 md:px-5">
-        <label className="grid gap-1.5 text-sm font-medium">
-          Вес в матрице, %
-          <DecimalInput
-            value={group.weight}
-            ariaLabel="Вес smart-задач в матрице"
-            onValueChange={(weight) => {
-              const others = matrixWeightSum - group.weight
-              if (!Number.isFinite(weight) || weight <= 0) {
-                setWeightError('Вес — число больше 0.')
-                return
-              }
-              if (others + weight > 100 + 1e-6) {
-                setWeightError('Сумма весов матрицы не может быть больше 100%.')
-                return
-              }
-              setWeightError('')
-              onWeight(weight)
-            }}
-            className="h-8 w-24 bg-white tabular-nums"
-          />
-        </label>
+        <MatrixWeightField
+          value={group.weight}
+          others={matrixWeightSum - group.weight}
+          onCommit={onWeight}
+        />
         <div>
           <p className="text-xs text-ink-soft">Выполнено задач</p>
           <p className="text-lg font-semibold tabular-nums">{formatPercent(smartGroupCompletion(group))}</p>
@@ -430,7 +468,6 @@ function SmartBlock({
           </Button>
         )}
       </div>
-      {weightError ? <p className="px-4 pb-3 text-sm text-destructive md:px-5">{weightError}</p> : null}
       {group.tasks.length === 0 ? (
         <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">
           В блоке пока нет задач. Вес в матрице сохранён, выполнение блока — 0%.
