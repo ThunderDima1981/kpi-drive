@@ -20,18 +20,11 @@ import { useTeamStore } from '../store/team-store.ts'
 import type { Indicator, IndicatorType, KpiIndicator, SmartComment, SmartStatus, StandardScore } from '../types.ts'
 
 function dialogTitle(initial: Indicator | null, defaultType: IndicatorType) {
-  if (!initial && defaultType === 'smart') return 'Новая smart-задача'
-  if (initial?.type === 'smart') return 'Smart-задача'
-  if (initial?.type === 'kpi') return 'Количественный KPI'
-  if (initial?.type === 'standard') return 'Стандарт'
-  return initial ? 'Показатель матрицы' : 'Новый показатель'
+  const type = initial?.type ?? defaultType
+  if (type === 'smart') return initial ? 'Smart-задача' : 'Новая smart-задача'
+  if (type === 'kpi') return initial ? 'Количественный KPI' : 'Новый количественный KPI'
+  return initial ? 'Стандарт' : 'Новый стандарт'
 }
-
-const TYPE_OPTIONS: { id: IndicatorType; label: string; hint: string }[] = [
-  { id: 'kpi', label: 'Количественный KPI', hint: 'Порог, план и максимум' },
-  { id: 'smart', label: 'Smart-задача', hint: 'Статус вместо прогресса' },
-  { id: 'standard', label: 'Стандарт', hint: 'Оценка и оценщик' },
-]
 
 const SCORES: StandardScore[] = [-2, -1, 0, 1, 2]
 
@@ -144,8 +137,7 @@ export function IndicatorDialog({
   const [commentText, setCommentText] = useState('')
   const [commentError, setCommentError] = useState('')
 
-  const typeLocked = Boolean(initial) || defaultType === 'smart'
-  const lockedType = initial?.type ?? (defaultType === 'smart' ? 'smart' : draft.type)
+  const indicatorType = initial?.type ?? defaultType
   const employee = employees.find((item) => item.id === employeeId)
   const parsedWeight = parseNumber(draft.weight)
   const otherWeight =
@@ -165,8 +157,7 @@ export function IndicatorDialog({
     }
 
     let indicator: Indicator | null = null
-    const type = initial ? initial.type : draft.type
-    if (type === 'kpi') {
+    if (indicatorType === 'kpi') {
       const threshold = parseNumber(draft.threshold)
       const plan = parseNumber(draft.plan)
       const maximum = parseNumber(draft.maximum)
@@ -203,7 +194,7 @@ export function IndicatorDialog({
         if (order) nextErrors.scale = order
         else indicator = candidate
       }
-    } else if (type === 'smart' && weight !== null) {
+    } else if (indicatorType === 'smart' && weight !== null) {
       indicator = {
         id: initial?.id ?? crypto.randomUUID(),
         type: 'smart',
@@ -252,34 +243,6 @@ export function IndicatorDialog({
           </DialogHeader>
 
           <div className="mt-4 grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4">
-            {typeLocked ? null : (
-            <div className="grid gap-2 sm:grid-cols-3">
-              {TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      type: option.id,
-                      evaluatorId:
-                        option.id === 'standard' && !current.evaluatorId
-                          ? (employee?.managerId ?? '')
-                          : current.evaluatorId,
-                    }))
-                  }
-                  className={cn(
-                    'rounded-xl border px-3 py-2 text-left',
-                    draft.type === option.id ? 'border-pine bg-pine/5' : 'border-line hover:bg-muted',
-                  )}
-                >
-                  <span className="block text-sm font-semibold">{option.label}</span>
-                  <span className="block text-xs text-ink-soft">{option.hint}</span>
-                </button>
-              ))}
-            </div>
-            )}
-
             <Field label="Название" error={errors.name}>
               <Input
                 value={draft.name}
@@ -299,7 +262,7 @@ export function IndicatorDialog({
               </p>
             </Field>
 
-            {lockedType === 'kpi' ? (
+            {indicatorType === 'kpi' ? (
               <>
                 <div className="flex items-start gap-3 rounded-xl border border-line px-3 py-3">
                   <Checkbox
@@ -369,7 +332,7 @@ export function IndicatorDialog({
               </>
             ) : null}
 
-            {lockedType === 'smart' ? (
+            {indicatorType === 'smart' ? (
               <SmartFields
                 draft={draft}
                 statusEditable={Boolean(initial)}
@@ -399,7 +362,7 @@ export function IndicatorDialog({
               />
             ) : null}
 
-            {lockedType === 'standard' ? (
+            {indicatorType === 'standard' ? (
               <div className="grid gap-4">
                 <Field label="Оценщик" error={errors.evaluator}>
                   <select
