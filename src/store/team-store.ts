@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
 import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, DEFAULT_MAX_CAP } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
-import { normalizeIndicator } from '../lib/smart.ts'
-import type { CatalogKpi, Employee, Indicator, KpiIndicator, SmartComment, SmartStatus, TeamData } from '../types.ts'
+import { collapseSmartIndicators, normalizeIndicator } from '../lib/smart.ts'
+import type { CatalogKpi, Employee, Indicator, KpiIndicator, SmartComment, SmartStatus, SmartTask, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
   setPeriodLabel: (periodLabel: string) => void
@@ -20,8 +20,12 @@ interface TeamState extends TeamData {
   removeCatalogKpi: (id: string) => void
   setCatalogFact: (id: string, fact: number) => void
   assignKpi: (employeeId: string, catalogId: string, weight: number) => void
-  setStatus: (employeeId: string, indicatorId: string, status: SmartStatus) => void
-  addComment: (employeeId: string, indicatorId: string, comment: SmartComment) => void
+  setSmartWeight: (employeeId: string, weight: number) => void
+  addSmartTask: (employeeId: string, task: SmartTask, matrixWeight?: number) => void
+  updateSmartTask: (employeeId: string, task: SmartTask) => void
+  removeSmartTask: (employeeId: string, taskId: string) => void
+  setStatus: (employeeId: string, taskId: string, status: SmartStatus) => void
+  addComment: (employeeId: string, taskId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: number) => void
   setEvaluator: (employeeId: string, indicatorId: string, evaluatorId: string | null) => void
   resetDemo: () => void
@@ -87,8 +91,8 @@ function normalizeTeam(persisted: unknown): TeamData {
     periodLabel: typeof data?.periodLabel === 'string' ? data.periodLabel : '',
     employees: withCatalog.map((employee) => ({
       ...employee,
-      indicators: employee.indicators.filter(
-        (indicator) => indicator.type !== 'kpi' || known.has(indicator.catalogId),
+      indicators: collapseSmartIndicators(
+        employee.indicators.filter((indicator) => indicator.type !== 'kpi' || known.has(indicator.catalogId)),
       ),
     })),
     kpiCatalog: [...catalog.values()],
@@ -140,6 +144,27 @@ function adoptKpi(indicator: Indicator, catalog: Map<string, CatalogKpi>): Indic
 
 function finiteWeight(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function mapSmartTask(
+  employees: Employee[],
+  employeeId: string,
+  taskId: string,
+  update: (task: SmartTask) => SmartTask,
+) {
+  return employees.map((employee) => {
+    if (employee.id !== employeeId) return employee
+    return {
+      ...employee,
+      indicators: employee.indicators.map((indicator) => {
+        if (indicator.type !== 'smart' || !indicator.tasks.some((task) => task.id === taskId)) return indicator
+        return {
+          ...indicator,
+          tasks: indicator.tasks.map((task) => (task.id === taskId ? update(task) : task)),
+        }
+      }),
+    }
+  })
 }
 
 function mapIndicator(
@@ -284,17 +309,75 @@ export const useTeamStore = create<TeamState>()(
             }),
           }
         }),
-      setStatus: (employeeId, indicatorId, status) =>
+      setSmartWeight: (employeeId, weight) =>
+        set((state) => {
+          if (!Number.isFinite(weight) || weight <= 0 || weight > 100) return state
+          return {
+            employees: state.employees.map((employee) => {
+              if (employee.id !== employeeId) return employee
+              return {
+                ...employee,
+                indicators: employee.indicators.map((indicator) =>
+                  indicator.type === 'smart' ? { ...indicator, weight } : indicator,
+                ),
+              }
+            }),
+          }
+        }),
+      addSmartTask: (employeeId, task, matrixWeight) =>
         set((state) => ({
-          employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
-            indicator.type === 'smart' ? { ...indicator, status } : indicator,
-          ),
+          employees: state.employees.map((employee) => {
+            if (employee.id !== employeeId) return employee
+            const group = employee.indicators.find((indicator) => indicator.type === 'smart')
+            if (group?.type === 'smart') {
+              if (group.tasks.some((item) => item.id === task.id)) return employee
+              return {
+                ...employee,
+                indicators: employee.indicators.map((indicator) =>
+                  indicator.type === 'smart' ? { ...indicator, tasks: [...indicator.tasks, task] } : indicator,
+                ),
+              }
+            }
+            if (matrixWeight === undefined || !Number.isFinite(matrixWeight) || matrixWeight <= 0 || matrixWeight > 100) {
+              return employee
+            }
+            return {
+              ...employee,
+              indicators: [
+                ...employee.indicators,
+                { id: uid(), type: 'smart', weight: matrixWeight, tasks: [task] },
+              ],
+            }
+          }),
         })),
-      addComment: (employeeId, indicatorId, comment) =>
+      updateSmartTask: (employeeId, task) =>
         set((state) => ({
-          employees: mapIndicator(state.employees, employeeId, indicatorId, (indicator) =>
-            indicator.type === 'smart' ? { ...indicator, comments: [...indicator.comments, comment] } : indicator,
-          ),
+          employees: mapSmartTask(state.employees, employeeId, task.id, () => task),
+        })),
+      removeSmartTask: (employeeId, taskId) =>
+        set((state) => ({
+          employees: state.employees.map((employee) => {
+            if (employee.id !== employeeId) return employee
+            return {
+              ...employee,
+              indicators: employee.indicators.map((indicator) =>
+                indicator.type === 'smart'
+                  ? { ...indicator, tasks: indicator.tasks.filter((task) => task.id !== taskId) }
+                  : indicator,
+              ),
+            }
+          }),
+        })),
+      setStatus: (employeeId, taskId, status) =>
+        set((state) => ({
+          employees: mapSmartTask(state.employees, employeeId, taskId, (task) => ({ ...task, status })),
+        })),
+      addComment: (employeeId, taskId, comment) =>
+        set((state) => ({
+          employees: mapSmartTask(state.employees, employeeId, taskId, (task) => ({
+            ...task,
+            comments: [...task.comments, comment],
+          })),
         })),
       setScore: (employeeId, indicatorId, score) =>
         set((state) => ({

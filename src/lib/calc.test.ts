@@ -15,7 +15,7 @@ import {
   weightedOf,
   type KpiScale,
 } from './calc.ts'
-import { normalizeIndicator, smartCompletion } from './smart.ts'
+import { collapseSmartIndicators, normalizeIndicator, smartCompletion } from './smart.ts'
 import type { CatalogKpi } from '../types.ts'
 
 function leads(fact: number, extra: Partial<KpiScale> = {}): KpiScale {
@@ -146,7 +146,7 @@ describe('smart tasks', () => {
     expect(smartCompletion('done')).toBe(0)
   })
 
-  it('turns a saved progress value into a status', () => {
+  it('turns a saved progress value into a task status', () => {
     const closed = normalizeIndicator({
       id: 's',
       type: 'smart',
@@ -161,8 +161,39 @@ describe('smart tasks', () => {
       weight: 10,
       progress: 80,
     } as never)
-    expect(closed).toMatchObject({ status: 'closed', detail: '', comments: [] })
-    expect(started).toMatchObject({ status: 'in_progress' })
+    expect(closed).toMatchObject({
+      weight: 10,
+      tasks: [{ status: 'closed', weight: 100, detail: '', comments: [] }],
+    })
+    expect(started).toMatchObject({ tasks: [{ status: 'in_progress' }] })
+  })
+
+  it('lets each task weight change the smart block completion', () => {
+    const block = {
+      id: 'smart',
+      type: 'smart' as const,
+      weight: 30,
+      tasks: [
+        { id: 'a', name: 'A', weight: 60, detail: '', criterion: '', status: 'closed' as const, comments: [] },
+        { id: 'b', name: 'B', weight: 40, detail: '', criterion: '', status: 'done' as const, comments: [] },
+      ],
+    }
+    expect(completionOf(block)).toBe(60)
+    expect(weightedOf(block)).toBe(18)
+  })
+
+  it('folds several matrix smart rows into one block and keeps the same KR contribution', () => {
+    const collapsed = collapseSmartIndicators([
+      normalizeIndicator({ id: 'a', type: 'smart', name: 'A', weight: 30, status: 'closed' } as never),
+      normalizeIndicator({ id: 'b', type: 'smart', name: 'B', weight: 20, status: 'in_progress' } as never),
+    ])
+    expect(collapsed).toHaveLength(1)
+    const smart = collapsed[0]
+    expect(smart?.type).toBe('smart')
+    if (smart?.type !== 'smart') return
+    expect(smart.weight).toBe(50)
+    expect(smart.tasks.map((task) => task.weight)).toEqual([60, 40])
+    expect(weightedOf(smart)).toBe(30)
   })
 })
 

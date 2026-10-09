@@ -1,5 +1,5 @@
 import { formatNumber } from './format.ts'
-import { smartCompletion } from './smart.ts'
+import { smartGroupCompletion } from './smart.ts'
 import type { CatalogKpi, Indicator, KpiPoint, ScalePoint, StandardIndicator, StandardScore } from '../types.ts'
 
 export const DEFAULT_MAX_CAP = 130
@@ -207,7 +207,7 @@ export function completionOf(indicator: Indicator, catalog: CatalogKpi[] = []): 
     const shared = findCatalogKpi(catalog, indicator.catalogId)
     return shared ? kpiCompletionOf(shared) : 0
   }
-  if (indicator.type === 'smart') return smartCompletion(indicator.status)
+  if (indicator.type === 'smart') return smartGroupCompletion(indicator)
   return completionOnScale(indicator.score, indicator.points ?? [])
 }
 

@@ -31,15 +31,21 @@ export interface SmartComment {
   createdAt: string
 }
 
-export interface SmartIndicator {
+export interface SmartTask {
   id: string
-  type: 'smart'
   name: string
   weight: number
   detail: string
   criterion: string
   status: SmartStatus
   comments: SmartComment[]
+}
+
+export interface SmartIndicator {
+  id: string
+  type: 'smart'
+  weight: number
+  tasks: SmartTask[]
 }
 
 export interface ScalePoint {

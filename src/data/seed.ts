@@ -6,6 +6,7 @@ import type {
   SmartComment,
   SmartIndicator,
   SmartStatus,
+  SmartTask,
   StandardIndicator,
   TeamData,
 } from '../types.ts'
@@ -19,7 +20,16 @@ function smart(
   criterion: string,
   comments: SmartComment[] = [],
 ): SmartIndicator {
-  return { id, type: 'smart', name, weight, status, detail, criterion, comments }
+  const task: SmartTask = {
+    id: `${id}-task`,
+    name,
+    weight: 100,
+    detail,
+    criterion,
+    status,
+    comments,
+  }
+  return { id, type: 'smart', weight, tasks: [task] }
 }
 
 function standard(

@@ -16,11 +16,11 @@ import { defaultStandardPoints } from '../lib/calc.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
 import { useTeamStore } from '../store/team-store.ts'
-import type { Indicator, IndicatorType, SmartComment, SmartStatus, StandardScore } from '../types.ts'
+import type { Indicator, IndicatorType, SmartComment, SmartStatus, SmartTask, StandardScore } from '../types.ts'
 
-function dialogTitle(initial: Indicator | null, defaultType: IndicatorType) {
+function dialogTitle(initial: Indicator | null, defaultType: IndicatorType, smartTask: SmartTask | null) {
   const type = initial?.type ?? defaultType
-  if (type === 'smart') return initial ? 'Smart-задача' : 'Новая smart-задача'
+  if (type === 'smart') return smartTask ? 'Smart-задача' : 'Новая smart-задача'
   if (type === 'kpi') return 'Вес в матрице'
   return initial ? 'Стандарт' : 'Новый стандарт'
 }
@@ -35,6 +35,7 @@ interface Draft {
   criterion: string
   status: SmartStatus
   comments: SmartComment[]
+  matrixWeight: string
   score: number
   evaluatorId: string
 }
@@ -48,24 +49,27 @@ function emptyDraft(type: IndicatorType): Draft {
     criterion: '',
     status: 'created',
     comments: [],
+    matrixWeight: '',
     score: 0,
     evaluatorId: '',
   }
 }
 
+function draftFromTask(task: SmartTask): Draft {
+  return {
+    ...emptyDraft('smart'),
+    name: task.name,
+    weight: String(task.weight),
+    detail: task.detail,
+    criterion: task.criterion,
+    status: task.status,
+    comments: task.comments,
+  }
+}
+
 function draftFrom(indicator: Indicator): Draft {
   if (indicator.type === 'kpi') return { ...emptyDraft('kpi'), weight: String(indicator.weight) }
-  if (indicator.type === 'smart') {
-    return {
-      ...emptyDraft('smart'),
-      name: indicator.name,
-      weight: String(indicator.weight),
-      detail: indicator.detail,
-      criterion: indicator.criterion,
-      status: indicator.status,
-      comments: indicator.comments,
-    }
-  }
+  if (indicator.type === 'smart') return emptyDraft('smart')
   return {
     ...emptyDraft('standard'),
     name: indicator.name,
@@ -78,11 +82,13 @@ function draftFrom(indicator: Indicator): Draft {
 export function IndicatorDialog({
   employeeId,
   initial,
+  smartTask = null,
   defaultType,
   onOpenChange,
 }: {
   employeeId: string
   initial: Indicator | null
+  smartTask?: SmartTask | null
   defaultType: IndicatorType
   onOpenChange: (open: boolean) => void
 }) {
@@ -90,8 +96,12 @@ export function IndicatorDialog({
   const addIndicator = useTeamStore((state) => state.addIndicator)
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
   const removeIndicator = useTeamStore((state) => state.removeIndicator)
+  const addSmartTask = useTeamStore((state) => state.addSmartTask)
+  const updateSmartTask = useTeamStore((state) => state.updateSmartTask)
+  const removeSmartTask = useTeamStore((state) => state.removeSmartTask)
   const addComment = useTeamStore((state) => state.addComment)
   const [draft, setDraft] = useState<Draft>(() => {
+    if (defaultType === 'smart') return smartTask ? draftFromTask(smartTask) : emptyDraft('smart')
     const next = initial ? draftFrom(initial) : emptyDraft(defaultType)
     if (!initial && defaultType === 'standard' && !next.evaluatorId) {
       const owner = useTeamStore.getState().employees.find((item) => item.id === employeeId)
@@ -105,12 +115,20 @@ export function IndicatorDialog({
 
   const indicatorType = initial?.type ?? defaultType
   const employee = employees.find((item) => item.id === employeeId)
+  const smartGroup = employee?.indicators.find((indicator) => indicator.type === 'smart')
   const parsedWeight = parseNumber(draft.weight)
   const otherWeight =
     employee?.indicators
-      .filter((indicator) => indicator.id !== initial?.id)
+      .filter((indicator) => indicator.id !== initial?.id && indicator.type !== 'smart')
       .reduce((sum, indicator) => sum + indicator.weight, 0) ?? 0
-  const nextWeightSum = otherWeight + (parsedWeight ?? 0)
+  const parsedMatrixWeight = parseNumber(draft.matrixWeight)
+  const nextWeightSum =
+    otherWeight + (smartGroup?.type === 'smart' ? smartGroup.weight : (parsedMatrixWeight ?? 0)) + (indicatorType === 'standard' ? (parsedWeight ?? 0) : 0)
+  const otherTaskWeight =
+    smartGroup?.type === 'smart'
+      ? smartGroup.tasks.filter((task) => task.id !== smartTask?.id).reduce((sum, task) => sum + task.weight, 0)
+      : 0
+  const nextTaskSum = otherTaskWeight + (parsedWeight ?? 0)
 
   function save(event: React.FormEvent) {
     event.preventDefault()
@@ -119,22 +137,35 @@ export function IndicatorDialog({
     const weight = parseNumber(draft.weight)
     if (!name) nextErrors.name = 'Введите название.'
     if (weight === null || weight <= 0 || weight > 100) {
-      nextErrors.weight = 'Вес — число больше 0 и не больше 100.'
+      nextErrors.weight = indicatorType === 'smart' ? 'Вес задачи — число больше 0 и не больше 100.' : 'Вес — число больше 0 и не больше 100.'
     }
 
-    let indicator: Indicator | null = null
-    if (indicatorType === 'smart' && weight !== null) {
-      indicator = {
-        id: initial?.id ?? crypto.randomUUID(),
-        type: 'smart',
+    if (indicatorType === 'smart') {
+      const matrixWeight = parseNumber(draft.matrixWeight)
+      if (!smartGroup && (matrixWeight === null || matrixWeight <= 0 || matrixWeight > 100)) {
+        nextErrors.matrixWeight = 'Вес блока — число больше 0 и не больше 100.'
+      }
+      if (Object.keys(nextErrors).length > 0 || weight === null) {
+        setErrors(nextErrors)
+        return
+      }
+      const task: SmartTask = {
+        id: smartTask?.id ?? crypto.randomUUID(),
         name,
         weight,
         detail: draft.detail.trim(),
         criterion: draft.criterion.trim(),
-        status: initial ? draft.status : 'created',
+        status: smartTask ? draft.status : 'created',
         comments: draft.comments,
       }
-    } else if (indicatorType === 'standard' && weight !== null) {
+      if (smartTask) updateSmartTask(employeeId, task)
+      else addSmartTask(employeeId, task, smartGroup ? undefined : (matrixWeight ?? undefined))
+      onOpenChange(false)
+      return
+    }
+
+    let indicator: Indicator | null = null
+    if (indicatorType === 'standard' && weight !== null) {
       const evaluatorId = employees.some((item) => item.id === draft.evaluatorId) ? draft.evaluatorId : ''
       if (!evaluatorId) nextErrors.evaluator = 'Выберите оценщика из сотрудников.'
       else {
@@ -165,9 +196,11 @@ export function IndicatorDialog({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
         <form className="flex max-h-[min(92vh,860px)] min-h-0 flex-col" onSubmit={save}>
           <DialogHeader className="px-4 pt-4 pr-12">
-            <DialogTitle>{dialogTitle(initial, defaultType)}</DialogTitle>
+            <DialogTitle>{dialogTitle(initial, defaultType, smartTask)}</DialogTitle>
             <DialogDescription>
-              Вес входит в сумму 100%. КР считается как выполнение, умноженное на вес.
+              {indicatorType === 'smart'
+                ? 'Вес задачи задаёт её долю в блоке. Выполнение блока — сумма долей закрытых задач, и уже этот блок своим весом входит в КР.'
+                : 'Вес входит в сумму 100%. КР считается как выполнение, умноженное на вес.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -179,22 +212,43 @@ export function IndicatorDialog({
                 onValueChange={(name) => setDraft((current) => ({ ...current, name }))}
               />
             </Field>
-            <Field label="Вес, %" error={errors.weight}>
+            <Field label={indicatorType === 'smart' ? 'Вес задачи, %' : 'Вес, %'} error={errors.weight}>
               <Input
                 inputMode="decimal"
                 value={draft.weight}
+                aria-label={indicatorType === 'smart' ? 'Вес задачи' : 'Вес'}
                 aria-invalid={Boolean(errors.weight)}
                 onValueChange={(weight) => setDraft((current) => ({ ...current, weight }))}
               />
-              <p className={cn('text-xs', Math.abs(nextWeightSum - 100) < 0.05 ? 'text-zone-green' : 'text-zone-amber')}>
-                После сохранения сумма весов матрицы будет {formatPercent(nextWeightSum)}.
-              </p>
+              {indicatorType === 'smart' ? (
+                <p className={cn('text-xs', Math.abs(nextTaskSum - 100) < 0.05 ? 'text-zone-green' : 'text-zone-amber')}>
+                  После сохранения сумма весов задач будет {formatPercent(nextTaskSum)}.
+                </p>
+              ) : (
+                <p className={cn('text-xs', Math.abs(nextWeightSum - 100) < 0.05 ? 'text-zone-green' : 'text-zone-amber')}>
+                  После сохранения сумма весов матрицы будет {formatPercent(nextWeightSum)}.
+                </p>
+              )}
             </Field>
+            {indicatorType === 'smart' && !smartGroup ? (
+              <Field label="Вес блока в матрице, %" error={errors.matrixWeight}>
+                <Input
+                  inputMode="decimal"
+                  value={draft.matrixWeight}
+                  aria-label="Вес блока в матрице"
+                  aria-invalid={Boolean(errors.matrixWeight)}
+                  onValueChange={(matrixWeight) => setDraft((current) => ({ ...current, matrixWeight }))}
+                />
+                <p className={cn('text-xs', Math.abs(nextWeightSum - 100) < 0.05 ? 'text-zone-green' : 'text-zone-amber')}>
+                  После сохранения сумма весов матрицы будет {formatPercent(nextWeightSum)}.
+                </p>
+              </Field>
+            ) : null}
 
             {indicatorType === 'smart' ? (
               <SmartFields
                 draft={draft}
-                statusEditable={Boolean(initial)}
+                statusEditable={Boolean(smartTask)}
                 commentText={commentText}
                 commentError={commentError}
                 onDraft={setDraft}
@@ -214,7 +268,7 @@ export function IndicatorDialog({
                     createdAt: new Date().toISOString(),
                   }
                   setDraft((current) => ({ ...current, comments: [...current.comments, comment] }))
-                  if (initial?.type === 'smart') addComment(employeeId, initial.id, comment)
+                  if (smartTask) addComment(employeeId, smartTask.id, comment)
                   setCommentText('')
                   setCommentError('')
                 }}
@@ -266,12 +320,13 @@ export function IndicatorDialog({
           </div>
 
           <DialogFooter className="mx-0 mt-0 mb-0 shrink-0 sm:justify-between">
-            {initial ? (
+            {initial || smartTask ? (
               <Button
                 type="button"
                 variant="destructive"
                 onClick={() => {
-                  removeIndicator(employeeId, initial.id)
+                  if (smartTask) removeSmartTask(employeeId, smartTask.id)
+                  else if (initial) removeIndicator(employeeId, initial.id)
                   onOpenChange(false)
                 }}
               >
