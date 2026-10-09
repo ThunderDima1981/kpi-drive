@@ -16,12 +16,10 @@ export function SettingsView() {
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
   const addEmployee = useTeamStore((state) => state.addEmployee)
-  const resetDemo = useTeamStore((state) => state.resetDemo)
   const org = useOrgList(employees)
   const [name, setName] = useState('')
   const [position, setPosition] = useState('')
   const [error, setError] = useState('')
-  const [confirmReset, setConfirmReset] = useState(false)
 
   function add(event: React.FormEvent) {
     event.preventDefault()
@@ -41,7 +39,7 @@ export function SettingsView() {
         <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">Команда</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">Настройки</h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-          Состав команды и период матрицы хранятся в этом браузере. Расчёт по-прежнему только про коэффициент результативности.
+          Состав команды и матрицы хранятся в базе для вашей учётной записи. Расчёт по-прежнему только про коэффициент результативности.
         </p>
       </header>
 
@@ -76,7 +74,7 @@ export function SettingsView() {
           </div>
         </div>
         {employees.length === 0 ? (
-          <p className="px-5 py-8 text-sm text-ink-soft">Список пуст. Добавьте первого сотрудника или верните демонстрационную команду.</p>
+          <p className="px-5 py-8 text-sm text-ink-soft">Список пуст. Добавьте первого сотрудника.</p>
         ) : org.nodes.length === 0 ? (
           <p className="px-5 py-8 text-sm text-ink-soft">Никого не нашли по этому запросу.</p>
         ) : (
@@ -87,36 +85,6 @@ export function SettingsView() {
       </section>
 
       <KpiCatalogSection />
-
-      <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-        <h2 className="font-semibold">Демонстрационные данные</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          Вернёт пять матриц, включая Иванова Ивана, директора по маркетингу. Текущие правки в этом браузере будут заменены.
-        </p>
-        <div className="mt-4 flex gap-2">
-          {confirmReset ? (
-            <>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => {
-                  resetDemo()
-                  setConfirmReset(false)
-                }}
-              >
-                Заменить данные
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setConfirmReset(false)}>
-                Отмена
-              </Button>
-            </>
-          ) : (
-            <Button type="button" variant="outline" onClick={() => setConfirmReset(true)}>
-              Вернуть демо-команду
-            </Button>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

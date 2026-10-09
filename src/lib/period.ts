@@ -44,6 +44,11 @@ export function parsePeriodLabel(label: string) {
   return periodId(Number(year[0]), month + 1)
 }
 
+export function emptyTeam(date = new Date()): TeamData {
+  const id = periodId(date.getFullYear(), date.getMonth() + 1)
+  return publishPeriods([{ id, employees: [], kpiCatalog: [] }], id)
+}
+
 export function publishPeriods(periods: TeamData['periods'], currentPeriod: string): TeamData {
   const current = periods.find((period) => period.id === currentPeriod) ?? periods[0]
   if (!current) {

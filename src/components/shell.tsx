@@ -6,15 +6,21 @@ import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import type { OrgNode } from '../lib/org.ts'
 import type { Route } from '../lib/routes.ts'
+import type { User } from '../lib/session.ts'
+import { useSaveStatus } from '../lib/sync.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
 export function Shell({
   route,
+  user,
   onNavigate,
+  onLogout,
   children,
 }: {
   route: Route
+  user: User
   onNavigate: (route: Route) => void
+  onLogout: () => void
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -36,13 +42,13 @@ export function Shell({
   return (
     <div className="min-h-screen bg-paper text-ink md:grid md:grid-cols-[16.5rem_1fr]">
       <aside className="sticky top-0 hidden h-screen md:block">
-        <Sidebar route={route} onNavigate={go} />
+        <Sidebar route={route} user={user} onNavigate={go} onLogout={onLogout} />
       </aside>
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button type="button" aria-label="Закрыть меню" className="absolute inset-0 bg-ink/45" onClick={() => setOpen(false)} />
           <div className="relative h-full w-[16.5rem] max-w-[86vw] shadow-xl">
-            <Sidebar route={route} onNavigate={go} />
+            <Sidebar route={route} user={user} onNavigate={go} onLogout={onLogout} />
           </div>
         </div>
       ) : null}
@@ -60,11 +66,22 @@ export function Shell({
   )
 }
 
-function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Route) => void }) {
+function Sidebar({
+  route,
+  user,
+  onNavigate,
+  onLogout,
+}: {
+  route: Route
+  user: User
+  onNavigate: (route: Route) => void
+  onLogout: () => void
+}) {
   const employees = useTeamStore((state) => state.employees)
   const periodLabel = useTeamStore((state) => state.periodLabel)
   const currentPeriod = useTeamStore((state) => state.currentPeriod)
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
+  const saveStatus = useSaveStatus()
   const [periodOpen, setPeriodOpen] = useState(false)
   const org = useOrgList(employees)
 
@@ -132,6 +149,14 @@ function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (route: Rout
           <p className="mt-1 text-sm font-medium">{periodLabel || 'Не задан'}</p>
         </button>
         <p className="mt-3 text-xs leading-relaxed text-white/45">Считается только КР. Оклады и премии не участвуют.</p>
+        <p className="mt-3 truncate text-sm font-medium">{user.name}</p>
+        <p className="truncate text-xs text-white/45">{user.email}</p>
+        <p className="mt-1 text-xs text-white/45">
+          {saveStatus === 'saving' ? 'Сохраняем…' : saveStatus === 'error' ? 'Не удалось сохранить' : 'Данные в базе'}
+        </p>
+        <button type="button" className="mt-2 text-sm font-medium text-white/80 hover:text-white" onClick={onLogout}>
+          Выйти
+        </button>
       </div>
     </div>
   )

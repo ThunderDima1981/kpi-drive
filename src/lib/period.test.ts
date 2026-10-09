@@ -1,43 +1,123 @@
 import { describe, expect, it } from 'vitest'
-import { createSeed } from '../data/seed.ts'
-import { completionOf, matrixResult } from './calc.ts'
-import { ensurePeriod, formatPeriod, parsePeriodLabel } from './period.ts'
+import { completionOf, defaultStandardPoints, matrixResult } from './calc.ts'
+import { defaultSmartPoints } from './smart.ts'
+import { emptyTeam, ensurePeriod, formatPeriod, parsePeriodLabel, publishPeriods } from './period.ts'
+import type { TeamData } from '../types.ts'
+
+function filledMonth(): TeamData {
+  return publishPeriods(
+    [
+      {
+        id: '2026-10',
+        kpiCatalog: [
+          {
+            id: 'leads',
+            name: 'Лиды',
+            unit: 'шт',
+            fact: 900,
+            points: [
+              { id: 'a', value: 500, completion: 0 },
+              { id: 'b', value: 1000, completion: 100 },
+              { id: 'c', value: 1200, completion: 130 },
+            ],
+          },
+          {
+            id: 'cpl',
+            name: 'CPL',
+            unit: '₽',
+            fact: 320,
+            points: [
+              { id: 'd', value: 250, completion: 130 },
+              { id: 'e', value: 300, completion: 100 },
+              { id: 'f', value: 400, completion: 0 },
+            ],
+          },
+        ],
+        employees: [
+          {
+            id: 'person',
+            name: 'Сотрудник',
+            position: 'Роль',
+            managerId: null,
+            indicators: [
+              { id: 'k1', type: 'kpi', catalogId: 'leads', weight: 40 },
+              { id: 'k2', type: 'kpi', catalogId: 'cpl', weight: 20 },
+              {
+                id: 'smart',
+                type: 'smart',
+                weight: 30,
+                points: defaultSmartPoints(),
+                tasks: [
+                  {
+                    id: 'task',
+                    name: 'Задача',
+                    weight: 100,
+                    detail: '',
+                    criterion: '',
+                    status: 'in_progress',
+                    comments: [],
+                  },
+                ],
+              },
+              {
+                id: 'std',
+                type: 'standard',
+                name: 'Срок',
+                weight: 10,
+                score: 1,
+                points: defaultStandardPoints(),
+                evaluatorId: null,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    '2026-10',
+  )
+}
 
 describe('periods', () => {
-  it('names a month the same way as the demo period', () => {
+  it('names a month', () => {
     expect(formatPeriod('2026-10')).toBe('Октябрь 2026')
     expect(parsePeriodLabel('Октябрь 2026')).toBe('2026-10')
   })
 
+  it('starts an account with an empty current month', () => {
+    const team = emptyTeam(new Date(2026, 9, 9))
+    expect(team.currentPeriod).toBe('2026-10')
+    expect(team.employees).toEqual([])
+    expect(team.kpiCatalog).toEqual([])
+  })
+
   it('opens a new month without changing the month that is already filled in', () => {
-    const opened = ensurePeriod(createSeed(), '2026-11')
+    const opened = ensurePeriod(filledMonth(), '2026-11')
     const october = opened.periods.find((period) => period.id === '2026-10')
     const november = opened.periods.find((period) => period.id === '2026-11')
     expect(opened.currentPeriod).toBe('2026-11')
     expect(opened.periodLabel).toBe('Ноябрь 2026')
-    expect(october?.kpiCatalog.find((item) => item.id === 'kpi-leads')?.fact).toBe(900)
-    expect(november?.kpiCatalog.find((item) => item.id === 'kpi-leads')?.fact).toBe(500)
-    expect(november?.kpiCatalog.find((item) => item.id === 'kpi-cpl')?.fact).toBe(400)
+    expect(october?.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(900)
+    expect(november?.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(500)
+    expect(november?.kpiCatalog.find((item) => item.id === 'cpl')?.fact).toBe(400)
 
-    const octoberIvanov = october?.employees.find((employee) => employee.id === 'emp-ivanov')
-    const novemberIvanov = november?.employees.find((employee) => employee.id === 'emp-ivanov')
-    const octoberSmart = octoberIvanov?.indicators.find((item) => item.type === 'smart')
-    const novemberSmart = novemberIvanov?.indicators.find((item) => item.type === 'smart')
+    const octoberPerson = october?.employees[0]
+    const novemberPerson = november?.employees[0]
+    const octoberSmart = octoberPerson?.indicators.find((item) => item.type === 'smart')
+    const novemberSmart = novemberPerson?.indicators.find((item) => item.type === 'smart')
     expect(octoberSmart?.type === 'smart' ? octoberSmart.tasks[0]?.status : null).toBe('in_progress')
     expect(novemberSmart?.type === 'smart' ? novemberSmart.tasks[0]?.status : null).toBe('created')
-    expect(novemberIvanov ? completionOf(novemberIvanov.indicators[0]!, november!.kpiCatalog) : null).toBe(0)
-    expect(novemberIvanov ? matrixResult(novemberIvanov.indicators, november!.kpiCatalog).kr : null).toBe(10)
+    expect(novemberPerson ? completionOf(novemberPerson.indicators[0]!, november!.kpiCatalog) : null).toBe(0)
+    expect(novemberPerson ? matrixResult(novemberPerson.indicators, november!.kpiCatalog).kr : null).toBe(10)
 
-    const petrova = october?.employees.find((employee) => employee.id === 'emp-petrova')
-    const petrovaNext = november?.employees.find((employee) => employee.id === 'emp-petrova')
-    const talks = petrova?.indicators.find((item) => item.id === 'std-talks')
-    const talksNext = petrovaNext?.indicators.find((item) => item.id === 'std-talks')
-    expect(talks?.type === 'standard' ? talks.score : null).toBe(1)
-    expect(talksNext?.type === 'standard' ? talksNext.score : null).toBe(0)
+    const octoberStandard = octoberPerson?.indicators.find((item) => item.id === 'std')
+    const novemberStandard = novemberPerson?.indicators.find((item) => item.id === 'std')
+    expect(octoberStandard?.type === 'standard' ? octoberStandard.score : null).toBe(1)
+    expect(novemberStandard?.type === 'standard' ? novemberStandard.score : null).toBe(0)
 
     const back = ensurePeriod(opened, '2026-10')
-    const ivanov = back.employees.find((employee) => employee.id === 'emp-ivanov')
-    expect(back.kpiCatalog.find((item) => item.id === 'kpi-leads')?.fact).toBe(900)
-    expect(ivanov ? matrixResult(ivanov.indicators, back.kpiCatalog).kr : null).toBe(58)
+    expect(back.kpiCatalog.find((item) => item.id === 'leads')?.fact).toBe(900)
+    expect(back.employees[0]?.indicators.find((item) => item.type === 'smart')).toMatchObject({
+      tasks: [{ status: 'in_progress' }],
+    })
   })
 })

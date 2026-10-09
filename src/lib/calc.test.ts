@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createSeed } from '../data/seed.ts'
 import {
   completionOf,
+  defaultStandardPoints,
   explainKpi,
   explainSmart,
   explainStandard,
@@ -100,51 +100,14 @@ describe('shared kpi catalog', () => {
     expect(pointsWithPlan(points, 500)).toMatchObject({ error: expect.stringMatching(/шкале/) })
   })
 
-  it('uses one shared fact for every matrix that includes the indicator', () => {
-    const seed = createSeed()
-    const catalog = seed.kpiCatalog.map((item) => (item.id === 'kpi-leads' ? { ...item, fact: 1000 } : item))
-    const ivanov = seed.employees.find((employee) => employee.id === 'emp-ivanov')
-    const leads = ivanov?.indicators.find((item) => item.type === 'kpi' && item.catalogId === 'kpi-leads')
-    expect(completionOf(leads!, catalog)).toBe(100)
-    expect(seed.kpiCatalog.find((item) => item.id === 'kpi-leads')?.fact).toBe(900)
-  })
-})
-
-describe('matrixResult', () => {
-  it('calculates Ivanov exactly as the weighted sum of the demo matrix', () => {
-    const seed = createSeed()
-    const ivanov = seed.employees.find((employee) => employee.id === 'emp-ivanov')
-    expect(ivanov).toBeDefined()
-    const result = matrixResult(ivanov!.indicators, seed.kpiCatalog)
-    expect(result.weightSum).toBe(100)
-    expect(completionOf(ivanov!.indicators[0]!, seed.kpiCatalog)).toBe(80)
-    expect(weightedOf(ivanov!.indicators[0]!, seed.kpiCatalog)).toBe(32)
-    expect(completionOf(ivanov!.indicators[1]!, seed.kpiCatalog)).toBe(80)
-    expect(weightedOf(ivanov!.indicators[1]!, seed.kpiCatalog)).toBe(16)
-    expect(completionOf(ivanov!.indicators[2]!, seed.kpiCatalog)).toBe(0)
-    expect(weightedOf(ivanov!.indicators[2]!, seed.kpiCatalog)).toBe(0)
-    expect(completionOf(ivanov!.indicators[3]!, seed.kpiCatalog)).toBe(100)
-    expect(weightedOf(ivanov!.indicators[3]!, seed.kpiCatalog)).toBe(10)
-    expect(result.kr).toBe(58)
-    expect(result.byType).toEqual({ kpi: 48, smart: 0, standard: 10 })
-  })
-
-  it('keeps every demo matrix at 100% weight', () => {
-    const seed = createSeed()
-    for (const employee of seed.employees) {
-      expect(matrixResult(employee.indicators, seed.kpiCatalog).weightSum).toBe(100)
-    }
-  })
-
-  it('places the demo team into the expected zones', () => {
-    const seed = createSeed()
-    const results = Object.fromEntries(
-      seed.employees.map((employee) => [employee.id, matrixResult(employee.indicators, seed.kpiCatalog).kr]),
-    )
-    expect(results['emp-petrova']).toBeCloseTo(109.75)
-    expect(results['emp-sidorov']).toBeCloseTo(14.5)
-    expect(results['emp-kozlova']).toBeCloseTo(76.875)
-    expect(results['emp-volkov']).toBeCloseTo(115.107142, 4)
+  it('reads the fact from the catalog passed into the calculation', () => {
+    const catalog = [catalogFrom('kpi-leads', leads(900))]
+    const indicator = { id: 'row', type: 'kpi' as const, catalogId: 'kpi-leads', weight: 40 }
+    const updated = catalog.map((item) => (item.id === 'kpi-leads' ? { ...item, fact: 1000 } : item))
+    expect(completionOf(indicator, updated)).toBe(100)
+    expect(weightedOf(indicator, updated)).toBe(40)
+    expect(catalog[0]?.fact).toBe(900)
+    expect(matrixResult([indicator], updated)).toMatchObject({ kr: 40, weightSum: 40, byType: { kpi: 40, smart: 0, standard: 0 } })
   })
 })
 
@@ -249,7 +212,15 @@ describe('scale checks', () => {
 })
 
 describe('standard scale', () => {
-  const deadlines = createSeed().employees[0]?.indicators.find((item) => item.id === 'std-deadlines')
+  const deadlines = {
+    id: 'std',
+    type: 'standard' as const,
+    name: 'Сроки',
+    weight: 10,
+    score: 0,
+    points: defaultStandardPoints(),
+    evaluatorId: null,
+  }
 
   it('maps each default score to a point on the completion line', () => {
     expect(deadlines?.type).toBe('standard')
@@ -279,10 +250,5 @@ describe('standard scale', () => {
     expect(normalizeEvaluatorId(null, ids, 'emp-ivanov')).toBe(null)
     expect(normalizeEvaluatorId('missing', ids, 'emp-ivanov')).toBe('emp-ivanov')
     expect(normalizeEvaluatorId('missing', ids, null)).toBe(null)
-    const sidorov = createSeed().employees.find((employee) => employee.id === 'emp-sidorov')
-    const comms = sidorov?.indicators.find((item) => item.id === 'std-comms')
-    expect(comms?.type === 'standard' ? comms.evaluatorId : null).toBe('emp-ivanov')
-    const ivanov = createSeed().employees[0]?.indicators.find((item) => item.id === 'std-deadlines')
-    expect(ivanov?.type === 'standard' ? ivanov.evaluatorId : null).toBe('emp-petrova')
   })
 })

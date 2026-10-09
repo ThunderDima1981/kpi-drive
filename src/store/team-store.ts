@@ -1,13 +1,12 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { createSeed } from '../data/seed.ts'
 import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, pointsWithPlan, DEFAULT_MAX_CAP, fitsMatrixWeight } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
-import { ensurePeriod, mapCurrentPeriod, mapEveryPeriod, parsePeriodLabel, publishPeriods } from '../lib/period.ts'
+import { emptyTeam, ensurePeriod, mapCurrentPeriod, mapEveryPeriod, parsePeriodLabel, publishPeriods } from '../lib/period.ts'
 import { collapseSmartIndicators, defaultSmartPoints, normalizeIndicator } from '../lib/smart.ts'
 import type { CatalogKpi, Employee, Indicator, KpiIndicator, PeriodSnapshot, SmartComment, SmartStatus, SmartTask, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
+  replaceTeam: (data: unknown) => void
   selectPeriod: (id: string) => void
   setCatalogPlan: (id: string, plan: number) => string | null
   addEmployee: (name: string, position: string) => string | null
@@ -30,7 +29,6 @@ interface TeamState extends TeamData {
   addComment: (employeeId: string, taskId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: number) => void
   setEvaluator: (employeeId: string, indicatorId: string, evaluatorId: string | null) => void
-  resetDemo: () => void
 }
 
 function uid() {
@@ -205,12 +203,9 @@ function mapIndicator(
   })
 }
 
-const seed = createSeed()
-
-export const useTeamStore = create<TeamState>()(
-  persist(
-    (set) => ({
-      ...seed,
+export const useTeamStore = create<TeamState>()((set) => ({
+      ...emptyTeam(),
+      replaceTeam: (data) => set(normalizeTeam(data)),
       selectPeriod: (id) => set((state) => ensurePeriod(state, id)),
       setCatalogPlan: (id, plan) => {
         const item = useTeamStore.getState().kpiCatalog.find((kpi) => kpi.id === id)
@@ -508,25 +503,5 @@ export const useTeamStore = create<TeamState>()(
             ),
           }))
         }),
-      resetDemo: () => {
-        set(createSeed())
-      },
     }),
-    {
-      name: 'kpi-drive-mbo',
-      version: 3,
-      partialize: (state) => ({
-        currentPeriod: state.currentPeriod,
-        periods: state.periods,
-      }),
-      migrate: (persisted) => normalizeTeam(persisted),
-      merge: (persisted, current) => {
-        const raw = persisted as Partial<TeamData> | undefined
-        const hasData =
-          Array.isArray(raw?.periods) || Array.isArray(raw?.employees) || typeof raw?.periodLabel === 'string'
-        if (!hasData) return current
-        return { ...current, ...normalizeTeam(persisted) }
-      },
-    },
-  ),
 )
