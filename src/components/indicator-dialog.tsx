@@ -190,7 +190,7 @@ export function IndicatorDialog({
         weight,
         detail: draft.detail.trim(),
         criterion: draft.criterion.trim(),
-        status: draft.status,
+        status: initial ? draft.status : 'created',
         comments: draft.comments,
       }
     } else if (weight !== null) {
@@ -338,6 +338,7 @@ export function IndicatorDialog({
             {draft.type === 'smart' ? (
               <SmartFields
                 draft={draft}
+                statusEditable={Boolean(initial)}
                 commentText={commentText}
                 commentError={commentError}
                 onDraft={setDraft}
@@ -422,6 +423,7 @@ function Field({
 
 function SmartFields({
   draft,
+  statusEditable,
   commentText,
   commentError,
   onDraft,
@@ -429,6 +431,7 @@ function SmartFields({
   onAddComment,
 }: {
   draft: Draft
+  statusEditable: boolean
   commentText: string
   commentError: string
   onDraft: (update: (current: Draft) => Draft) => void
@@ -453,26 +456,34 @@ function SmartFields({
       </Field>
       <div>
         <p className="mb-2 text-sm font-medium">Статус</p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Статус smart-задачи">
-          {SMART_STATUSES.map((status) => {
-            const selected = draft.status === status
-            return (
-              <button
-                key={status}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => onDraft((current) => ({ ...current, status }))}
-                className={cn(
-                  'h-9 rounded-lg border px-2 text-sm font-medium',
-                  selected ? 'border-pine bg-pine text-primary-foreground' : 'border-line hover:bg-muted',
-                )}
-              >
-                {SMART_STATUS_LABEL[status]}
-              </button>
-            )
-          })}
-        </div>
-        <p className="mt-2 text-xs text-ink-soft">Закрыт — 100% выполнения. Создан, в работе и выполнен — 0%.</p>
+        {statusEditable ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Статус smart-задачи">
+            {SMART_STATUSES.map((status) => {
+              const selected = draft.status === status
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onDraft((current) => ({ ...current, status }))}
+                  className={cn(
+                    'h-9 rounded-lg border px-2 text-sm font-medium',
+                    selected ? 'border-pine bg-pine text-primary-foreground' : 'border-line hover:bg-muted',
+                  )}
+                >
+                  {SMART_STATUS_LABEL[status]}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-sm">Создан</p>
+        )}
+        <p className="mt-2 text-xs text-ink-soft">
+          {statusEditable
+            ? 'Закрыт — 100% выполнения. Создан, в работе и выполнено — 0%.'
+            : 'Новая задача сразу получает статус «Создан».'}
+        </p>
       </div>
       <div className="rounded-xl border border-line px-3 py-3">
         <p className="text-sm font-medium">Комментарии</p>

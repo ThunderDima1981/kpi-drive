@@ -14,7 +14,7 @@ import {
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
-import { SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
+import { SMART_STATUS_LABEL } from '../lib/smart.ts'
 import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator, StandardScore } from '../types.ts'
 
 export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack: () => void }) {
@@ -55,7 +55,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'smart',
       title: 'Smart-задачи',
-      hint: 'Статус «Закрыт» даёт 100% выполнения. Создан, в работе и выполнен дают 0%.',
+      hint: 'Статус «Закрыт» даёт 100% выполнения. Создан, в работе и выполнено дают 0%.',
       icon: ListChecks,
     },
     {
@@ -272,6 +272,30 @@ function KpiTable({
   )
 }
 
+function SmartAdvance({
+  name,
+  status,
+  onStatus,
+}: {
+  name: string
+  status: SmartStatus
+  onStatus: (status: SmartStatus) => void
+}) {
+  if (status === 'closed') return null
+  const markDone = status !== 'done'
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      aria-label={markDone ? `Отметить выполненной: ${name}` : `Закрыть: ${name}`}
+      onClick={() => onStatus(markDone ? 'done' : 'closed')}
+    >
+      {markDone ? 'Выполнено' : 'Закрыть'}
+    </Button>
+  )
+}
+
 function SmartTable({
   items,
   pendingDelete,
@@ -313,18 +337,14 @@ function SmartTable({
               </th>
               <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
               <td className="px-3 py-3">
-                <select
-                  aria-label={`Статус: ${indicator.name}`}
-                  value={indicator.status}
-                  onChange={(event) => onStatus(indicator.id, event.target.value as SmartStatus)}
-                  className="h-8 rounded-lg border border-line bg-white px-2 text-sm"
-                >
-                  {SMART_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {SMART_STATUS_LABEL[status]}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{SMART_STATUS_LABEL[indicator.status]}</span>
+                  <SmartAdvance
+                    name={indicator.name}
+                    status={indicator.status}
+                    onStatus={(status) => onStatus(indicator.id, status)}
+                  />
+                </div>
               </td>
               <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator))}</td>
               <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator))}</td>

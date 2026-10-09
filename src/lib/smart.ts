@@ -5,7 +5,7 @@ export const SMART_STATUSES: SmartStatus[] = ['created', 'in_progress', 'done', 
 export const SMART_STATUS_LABEL: Record<SmartStatus, string> = {
   created: 'Создан',
   in_progress: 'В работе',
-  done: 'Выполнен',
+  done: 'Выполнено',
   closed: 'Закрыт',
 }
 
