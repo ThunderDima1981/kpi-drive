@@ -1,6 +1,6 @@
 import pg from 'pg'
 
-const databaseUrl = process.env.DATABASE_URL ?? 'postgres://kpi:kpi@127.0.0.1:5432/kpi_drive'
+export const databaseUrl = process.env.DATABASE_URL ?? 'postgres://kpi:kpi@127.0.0.1:5432/kpi_drive'
 
 export const pool = new pg.Pool({ connectionString: databaseUrl })
 

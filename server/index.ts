@@ -3,7 +3,8 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { emptyTeam } from '../src/lib/period.ts'
-import { migrate, pool } from './db.ts'
+import { databaseUrl, migrate, pool } from './db.ts'
+import { ensureLocalPostgres } from './ensure-postgres.ts'
 import { hashPassword, verifyPassword } from './password.ts'
 import type { TeamData } from '../src/types.ts'
 
@@ -14,6 +15,7 @@ const app = new Hono()
 
 app.onError((error, c) => {
   console.error(error)
+  if (isDatabaseDown(error)) return c.json({ error: 'База данных недоступна. PostgreSQL не запущен.' }, 503)
   return c.json({ error: 'Не удалось выполнить запрос.' }, 500)
 })
 
@@ -167,8 +169,15 @@ async function currentUser(c: Parameters<typeof getCookie>[0]) {
   return found.rows[0] ?? null
 }
 
+function isDatabaseDown(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const code = 'code' in error ? String(error.code) : ''
+  return code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === '57P01' || code === '3D000' || code === '28P01'
+}
+
 const port = Number(process.env.PORT ?? 4327)
 
+ensureLocalPostgres(databaseUrl)
 await migrate()
 serve({ fetch: app.fetch, hostname: '::', port }, (info) => {
   console.log(`API http://${info.address}:${info.port}`)

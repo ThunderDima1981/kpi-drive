@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { ApiError, api } from '../lib/api.ts'
 import type { User } from '../lib/session.ts'
 
-export function AuthScreen({ onSuccess }: { onSuccess: (user: User) => void }) {
+export function AuthScreen({ onSuccess }: { onSuccess: (user: User) => void | Promise<void> }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -13,15 +13,25 @@ export function AuthScreen({ onSuccess }: { onSuccess: (user: User) => void }) {
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const nextName = String(form.get('name') ?? name).trim()
+    const nextEmail = String(form.get('email') ?? email).trim()
+    const nextPassword = String(form.get('password') ?? password)
+    setName(nextName)
+    setEmail(nextEmail)
+    setPassword(nextPassword)
     setPending(true)
     setError('')
     try {
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register'
-      const payload = mode === 'login' ? { email, password } : { name, email, password }
+      const payload =
+        mode === 'login'
+          ? { email: nextEmail, password: nextPassword }
+          : { name: nextName, email: nextEmail, password: nextPassword }
       const result = await api<{ user: User }>(path, { method: 'POST', body: JSON.stringify(payload) })
-      onSuccess(result.user)
+      await onSuccess(result.user)
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : 'Не удалось выполнить запрос.')
     } finally {
@@ -43,16 +53,17 @@ export function AuthScreen({ onSuccess }: { onSuccess: (user: User) => void }) {
           {mode === 'register' ? (
             <Label className="grid gap-1.5">
               <span>Имя</span>
-              <Input value={name} autoComplete="name" aria-label="Имя" onValueChange={setName} />
+              <Input name="name" value={name} autoComplete="name" aria-label="Имя" onValueChange={setName} />
             </Label>
           ) : null}
           <Label className="grid gap-1.5">
             <span>Почта</span>
-            <Input value={email} type="email" autoComplete="email" aria-label="Почта" onValueChange={setEmail} />
+            <Input name="email" value={email} type="email" autoComplete="email" aria-label="Почта" onValueChange={setEmail} />
           </Label>
           <Label className="grid gap-1.5">
             <span>Пароль</span>
             <Input
+              name="password"
               value={password}
               type="password"
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
