@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createSeed } from '../data/seed.ts'
+import { normalizeStandard } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
 import { normalizeIndicator } from '../lib/smart.ts'
-import type { Employee, Indicator, SmartComment, SmartStatus, StandardScore, TeamData } from '../types.ts'
+import type { Employee, Indicator, SmartComment, SmartStatus, TeamData } from '../types.ts'
 
 interface TeamState extends TeamData {
   setPeriodLabel: (periodLabel: string) => void
@@ -17,7 +18,7 @@ interface TeamState extends TeamData {
   setFact: (employeeId: string, indicatorId: string, fact: number) => void
   setStatus: (employeeId: string, indicatorId: string, status: SmartStatus) => void
   addComment: (employeeId: string, indicatorId: string, comment: SmartComment) => void
-  setScore: (employeeId: string, indicatorId: string, score: StandardScore) => void
+  setScore: (employeeId: string, indicatorId: string, score: number) => void
   resetDemo: () => void
 }
 
@@ -39,7 +40,9 @@ function normalizeTeam(persisted: unknown): TeamData {
           name: typeof employee.name === 'string' ? employee.name : '',
           position: typeof employee.position === 'string' ? employee.position : '',
           managerId: typeof employee.managerId === 'string' ? employee.managerId : null,
-          indicators: Array.isArray(employee.indicators) ? employee.indicators.map(normalizeIndicator) : [],
+          indicators: Array.isArray(employee.indicators)
+            ? employee.indicators.map((indicator) => normalizeStandard(normalizeIndicator(indicator)))
+            : [],
         },
       ]
     }),

@@ -1,5 +1,5 @@
 import { smartCompletion } from './smart.ts'
-import type { Indicator, KpiIndicator, StandardScore } from '../types.ts'
+import type { Indicator, KpiIndicator, ScalePoint, StandardIndicator, StandardScore } from '../types.ts'
 
 export const DEFAULT_MAX_CAP = 130
 
@@ -54,10 +54,70 @@ export function kpiCompletion(input: KpiScale): number {
   return 100 + ((plan - fact) / span) * (cap - 100)
 }
 
+export function defaultStandardPoints(): ScalePoint[] {
+  return ([-2, -1, 0, 1, 2] as StandardScore[]).map((score) => ({
+    id: `std-point-${score}`,
+    score,
+    completion: STANDARD_COMPLETION[score],
+  }))
+}
+
+export function completionOnScale(score: number, points: ScalePoint[]) {
+  const sorted = sortedPoints(points)
+  if (sorted.length === 0 || !Number.isFinite(score)) return 0
+  const exact = sorted.find((point) => nearlyEqual(point.score, score))
+  if (exact) return exact.completion
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  if (!first || !last) return 0
+  if (score <= first.score) return first.completion
+  if (score >= last.score) return last.completion
+  const upperIndex = sorted.findIndex((point) => point.score > score)
+  const upper = sorted[upperIndex]
+  const lower = sorted[upperIndex - 1]
+  if (!upper || !lower || upper.score === lower.score) return upper?.completion ?? 0
+  const ratio = (score - lower.score) / (upper.score - lower.score)
+  return lower.completion + ratio * (upper.completion - lower.completion)
+}
+
+export function normalizeStandard(indicator: Indicator): Indicator {
+  if (indicator.type !== 'standard') return indicator
+  const legacy = indicator as StandardIndicator
+  return {
+    ...legacy,
+    score: Number.isFinite(legacy.score) ? legacy.score : 0,
+    points: normalizePoints(legacy.points),
+  }
+}
+
+function normalizePoints(value: unknown): ScalePoint[] {
+  if (!Array.isArray(value)) return defaultStandardPoints()
+  const points = value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const point = item as Partial<ScalePoint>
+    if (!Number.isFinite(point.score) || !Number.isFinite(point.completion)) return []
+    return [
+      {
+        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        score: point.score as number,
+        completion: point.completion as number,
+      },
+    ]
+  })
+  return points.length >= 2 ? points : defaultStandardPoints()
+}
+
+function sortedPoints(points: ScalePoint[]) {
+  return points
+    .filter((point) => Number.isFinite(point.score) && Number.isFinite(point.completion))
+    .slice()
+    .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id))
+}
+
 export function completionOf(indicator: Indicator): number {
   if (indicator.type === 'kpi') return kpiCompletion(indicator)
   if (indicator.type === 'smart') return smartCompletion(indicator.status)
-  return STANDARD_COMPLETION[indicator.score] ?? 0
+  return completionOnScale(indicator.score, indicator.points ?? [])
 }
 
 export function weightedOf(indicator: Indicator): number {
@@ -128,22 +188,34 @@ function roundLabel(value: number) {
   return `${text}%`
 }
 
-const STANDARD_SCORES: StandardScore[] = [-2, -1, 0, 1, 2]
-
-export function standardSeries(score: StandardScore) {
-  return STANDARD_SCORES.map((value) => ({
-    score: value,
-    completion: STANDARD_COMPLETION[value],
-    marker: value === score,
+export function standardSeries(indicator: StandardIndicator) {
+  const points = sortedPoints(indicator.points).map((point) => ({
+    score: point.score,
+    completion: point.completion,
+    marker: nearlyEqual(point.score, indicator.score),
   }))
+  if (!points.some((point) => point.marker)) {
+    points.push({
+      score: indicator.score,
+      completion: completionOnScale(indicator.score, indicator.points),
+      marker: true,
+    })
+    points.sort((a, b) => a.score - b.score || Number(a.marker) - Number(b.marker))
+  }
+  return points
 }
 
-export function explainStandard(score: StandardScore) {
-  if (score === 0) return 'Оценка совпала с планом, поэтому выполнение равно 100%.'
-  if (score === -2) return 'Оценка −2 на пороге шкалы. Выполнение стандарта — 0%.'
-  if (score === -1) return 'Оценка −1 между порогом и планом. Выполнение стандарта — 70%.'
-  if (score === 1) return 'Оценка +1 между планом и максимумом. Выполнение стандарта — 115%.'
-  return 'Оценка +2 на максимуме шкалы. Выполнение ограничено потолком 130%.'
+export function explainStandard(indicator: StandardIndicator) {
+  const completion = roundLabel(completionOnScale(indicator.score, indicator.points))
+  const exact = sortedPoints(indicator.points).find((point) => nearlyEqual(point.score, indicator.score))
+  if (exact) return `Оценка ${formatScoreLabel(indicator.score)} стоит на точке шкалы. Выполнение — ${completion}.`
+  return `Оценка ${formatScoreLabel(indicator.score)} между точками шкалы. Выполнение — ${completion}.`
+}
+
+function formatScoreLabel(score: number) {
+  if (score > 0) return `+${score}`
+  if (score < 0) return `−${Math.abs(score)}`
+  return '0'
 }
 
 export function scaleSeries(indicator: KpiIndicator, steps = 48) {

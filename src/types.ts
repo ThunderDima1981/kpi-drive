@@ -35,12 +35,19 @@ export interface SmartIndicator {
   comments: SmartComment[]
 }
 
+export interface ScalePoint {
+  id: string
+  score: number
+  completion: number
+}
+
 export interface StandardIndicator {
   id: string
   type: 'standard'
   name: string
   weight: number
-  score: StandardScore
+  score: number
+  points: ScalePoint[]
 }
 
 export type Indicator = KpiIndicator | SmartIndicator | StandardIndicator

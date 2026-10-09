@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { DEFAULT_MAX_CAP, scaleOrderIssue } from '../lib/calc.ts'
+import { DEFAULT_MAX_CAP, defaultStandardPoints, scaleOrderIssue } from '../lib/calc.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
 import { useTeamStore } from '../store/team-store.ts'
@@ -42,7 +42,7 @@ interface Draft {
   criterion: string
   status: SmartStatus
   comments: SmartComment[]
-  score: StandardScore
+  score: number
 }
 
 function emptyDraft(type: IndicatorType): Draft {
@@ -200,6 +200,7 @@ export function IndicatorDialog({
         name,
         weight,
         score: draft.score,
+        points: initial?.type === 'standard' ? initial.points : defaultStandardPoints(),
       }
     }
 
@@ -367,12 +368,23 @@ export function IndicatorDialog({
 
             {draft.type === 'standard' ? (
               <div>
-                <p className="mb-2 text-sm font-medium">Оценка руководителя</p>
-                <ScorePicker
-                  value={draft.score}
-                  onChange={(score) => setDraft((current) => ({ ...current, score }))}
-                />
-                <p className="mt-2 text-xs text-ink-soft">0 = 100%, +1 = 115%, +2 = 130%, −1 = 70%, −2 = 0%.</p>
+                <p className="mb-2 text-sm font-medium">Текущая оценка</p>
+                <select
+                  aria-label="Текущая оценка стандарта"
+                  value={String(draft.score)}
+                  onChange={(event) => setDraft((current) => ({ ...current, score: Number(event.target.value) }))}
+                  className="h-9 w-full rounded-lg border border-input bg-white px-2 text-sm"
+                >
+                  {(initial?.type === 'standard' ? initial.points : defaultStandardPoints())
+                    .slice()
+                    .sort((a, b) => a.score - b.score)
+                    .map((point) => (
+                      <option key={point.id} value={point.score}>
+                        {point.score > 0 ? `+${point.score}` : point.score} · {formatPercent(point.completion)}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-2 text-xs text-ink-soft">Точки шкалы и их проценты выполнения меняются на графике.</p>
               </div>
             ) : null}
           </div>

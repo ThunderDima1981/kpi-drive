@@ -2,20 +2,19 @@ import { useState } from 'react'
 import { ArrowLeft, ChartLine, Check, ListChecks, Pencil, Plus, ShieldCheck, Target, Trash, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DecimalInput } from './decimal-input.tsx'
-import { IndicatorDialog, ScorePicker } from './indicator-dialog.tsx'
+import { IndicatorDialog } from './indicator-dialog.tsx'
 import { KrGauge } from './kr-gauge.tsx'
 import { ScaleDialog, StandardScaleDialog } from './scale-dialog.tsx'
 import {
   completionOf,
   matrixResult,
   scaleOrderIssue,
-  STANDARD_COMPLETION,
   weightedOf,
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, zoneOf, ZONES } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import { SMART_STATUS_LABEL } from '../lib/smart.ts'
-import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator, StandardScore } from '../types.ts'
+import type { Indicator, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, StandardIndicator } from '../types.ts'
 
 export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack: () => void }) {
   const employees = useTeamStore((state) => state.employees)
@@ -61,7 +60,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'standard',
       title: 'Стандарты',
-      hint: '0 = 100%, +1 = 115%, +2 = 130%, −1 = 70%, −2 = 0%.',
+      hint: 'На графике задаются точки шкалы и процент выполнения каждой. В строке выбирается текущая оценка.',
       icon: ShieldCheck,
     },
   ]
@@ -186,7 +185,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
         />
       ) : null}
       <ScaleDialog indicator={chart?.type === 'kpi' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
-      <StandardScaleDialog indicator={chart?.type === 'standard' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
+      <StandardScaleDialog employeeId={employee.id} indicator={chart?.type === 'standard' ? chart : null} onOpenChange={(open) => { if (!open) setChartId(null) }} />
     </div>
   )
 }
@@ -379,7 +378,7 @@ function StandardTable({
 }: {
   items: StandardIndicator[]
   pendingDelete: string | null
-  onScore: (id: string, score: StandardScore) => void
+  onScore: (id: string, score: number) => void
   onChart: (id: string) => void
   onEdit: (indicator: StandardIndicator) => void
   onAskDelete: (id: string | null) => void
@@ -404,8 +403,21 @@ function StandardTable({
               <th className="px-4 py-3 text-left font-medium">{indicator.name}</th>
               <td className="px-3 py-3 tabular-nums">{formatPercent(indicator.weight)}</td>
               <td className="px-3 py-3">
-                <ScorePicker value={indicator.score} onChange={(score) => onScore(indicator.id, score)} />
-                <span className="ml-2 text-xs text-ink-soft tabular-nums">{STANDARD_COMPLETION[indicator.score]}%</span>
+                <select
+                  aria-label={`Оценка: ${indicator.name}`}
+                  value={String(indicator.score)}
+                  onChange={(event) => onScore(indicator.id, Number(event.target.value))}
+                  className="h-8 rounded-lg border border-line bg-white px-2 text-sm"
+                >
+                  {indicator.points
+                    .slice()
+                    .sort((a, b) => a.score - b.score)
+                    .map((point) => (
+                      <option key={point.id} value={point.score}>
+                        {point.score > 0 ? `+${point.score}` : point.score} · {formatPercent(point.completion)}
+                      </option>
+                    ))}
+                </select>
               </td>
               <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completionOf(indicator))}</td>
               <td className="px-3 py-3 tabular-nums">{formatPercent(weightedOf(indicator))}</td>

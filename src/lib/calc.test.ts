@@ -145,10 +145,26 @@ describe('scale checks', () => {
 })
 
 describe('standard scale', () => {
-  it('maps each score to a point on the completion line', () => {
-    expect(standardSeries(0).map((point) => point.completion)).toEqual([0, 70, 100, 115, 130])
-    expect(standardSeries(1).find((point) => point.marker)?.score).toBe(1)
-    expect(explainStandard(-1)).toMatch(/70%/)
-    expect(explainStandard(0)).toMatch(/100%/)
+  const deadlines = createSeed().employees[0]?.indicators.find((item) => item.id === 'std-deadlines')
+
+  it('maps each default score to a point on the completion line', () => {
+    expect(deadlines?.type).toBe('standard')
+    if (deadlines?.type !== 'standard') return
+    expect(standardSeries(deadlines).map((point) => point.completion)).toEqual([0, 70, 100, 115, 130])
+    expect(standardSeries({ ...deadlines, score: 1 }).find((point) => point.marker)?.score).toBe(1)
+    expect(explainStandard({ ...deadlines, score: -1 })).toMatch(/70%/)
+    expect(explainStandard(deadlines)).toMatch(/100%/)
+  })
+
+  it('uses a custom point completion', () => {
+    expect(deadlines?.type).toBe('standard')
+    if (deadlines?.type !== 'standard') return
+    const custom = {
+      ...deadlines,
+      score: 0,
+      points: deadlines.points.map((point) => (point.score === 0 ? { ...point, completion: 80 } : point)),
+    }
+    expect(completionOf(custom)).toBe(80)
+    expect(completionOf({ ...custom, score: -0.5 })).toBe(75)
   })
 })

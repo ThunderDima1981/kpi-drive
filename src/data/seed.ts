@@ -1,5 +1,5 @@
-import { DEFAULT_MAX_CAP } from '../lib/calc.ts'
-import type { Employee, KpiIndicator, SmartComment, SmartIndicator, SmartStatus, TeamData } from '../types.ts'
+import { DEFAULT_MAX_CAP, defaultStandardPoints } from '../lib/calc.ts'
+import type { Employee, KpiIndicator, SmartComment, SmartIndicator, SmartStatus, StandardIndicator, TeamData } from '../types.ts'
 
 function smart(
   id: string,
@@ -11,6 +11,10 @@ function smart(
   comments: SmartComment[] = [],
 ): SmartIndicator {
   return { id, type: 'smart', name, weight, status, detail, criterion, comments }
+}
+
+function standard(id: string, name: string, weight: number, score: number): StandardIndicator {
+  return { id, type: 'standard', name, weight, score, points: defaultStandardPoints() }
 }
 
 function kpi(
@@ -64,13 +68,7 @@ export function createSeed(): TeamData {
             },
           ],
         ),
-        {
-          id: 'std-deadlines',
-          type: 'standard',
-          name: 'Соблюдение дедлайнов отчетности',
-          weight: 10,
-          score: 0,
-        },
+        standard('std-deadlines', 'Соблюдение дедлайнов отчетности', 10, 0),
       ],
     },
     {
@@ -96,13 +94,7 @@ export function createSeed(): TeamData {
             },
           ],
         ),
-        {
-          id: 'std-talks',
-          type: 'standard',
-          name: 'Качество переговоров',
-          weight: 10,
-          score: 1,
-        },
+        standard('std-talks', 'Качество переговоров', 10, 1),
       ],
     },
     {
@@ -121,13 +113,7 @@ export function createSeed(): TeamData {
           'Собрать на одном экране выручку, лиды и выполнение матриц за месяц.',
           'Совет открывает дашборд без выгрузки из таблиц, цифры совпадают с учётной системой.',
         ),
-        {
-          id: 'std-comms',
-          type: 'standard',
-          name: 'Коммуникация с заказчиками',
-          weight: 10,
-          score: -1,
-        },
+        standard('std-comms', 'Коммуникация с заказчиками', 10, -1),
       ],
     },
     {
@@ -146,13 +132,7 @@ export function createSeed(): TeamData {
           'Описать первые 30 дней для новых сотрудников и чек-лист руководителя.',
           'Программа утверждена, по ней прошёл хотя бы один новый сотрудник.',
         ),
-        {
-          id: 'std-hiring',
-          type: 'standard',
-          name: 'Соблюдение регламента найма',
-          weight: 15,
-          score: 0,
-        },
+        standard('std-hiring', 'Соблюдение регламента найма', 15, 0),
       ],
     },
     {
@@ -171,13 +151,7 @@ export function createSeed(): TeamData {
           'Показать новому пользователю первый сценарий за три шага.',
           'Онбординг включён на всех новых аккаунтах, до конца сценария доходят не меньше 60%.',
         ),
-        {
-          id: 'std-status',
-          type: 'standard',
-          name: 'Прозрачность статусов',
-          weight: 15,
-          score: 2,
-        },
+        standard('std-status', 'Прозрачность статусов', 15, 2),
       ],
     },
   ]
