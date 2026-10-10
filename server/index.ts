@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { streamSSE } from 'hono/streaming'
+import { publishTeamUpdate, subscribeTeamUpdates } from '../src/lib/team-live.ts'
 import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
 import { emptyTeam } from '../src/lib/period.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
@@ -206,6 +208,31 @@ app.delete('/api/users/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+app.get('/api/team/events', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  c.header('Cache-Control', 'no-cache')
+  c.header('X-Accel-Buffering', 'no')
+  return streamSSE(c, async (stream) => {
+    let unsubscribe = () => {}
+    const ping = setInterval(() => {
+      void stream.writeSSE({ event: 'ping', data: '' }).catch(() => undefined)
+    }, 20000)
+    unsubscribe = subscribeTeamUpdates(ownerId, (notice) => {
+      void stream.writeSSE({ event: 'team', data: JSON.stringify(notice) }).catch(() => undefined)
+    })
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        clearInterval(ping)
+        unsubscribe()
+        resolve()
+      })
+    })
+  })
+})
+
 app.get('/api/team', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
@@ -224,6 +251,7 @@ app.put('/api/team', async (c) => {
   if (JSON.stringify(body).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
   if (user.role === 'admin') {
     await saveTeamDocument(user.id, body)
+    publishTeamUpdate(user.id, clientOrigin(c))
     return c.json(body)
   }
   if (!user.teamOwnerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
@@ -233,8 +261,14 @@ app.put('/api/team', async (c) => {
   if (!merged) return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
   if (JSON.stringify(merged.saved).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
   await saveTeamDocument(user.teamOwnerId, merged.saved)
+  publishTeamUpdate(user.teamOwnerId, clientOrigin(c))
   return c.json(merged.view)
 })
+
+function clientOrigin(c: { req: { header: (name: string) => string | undefined } }) {
+  const value = c.req.header('x-client-id') ?? ''
+  return /^[0-9a-f-]{36}$/i.test(value) ? value : ''
+}
 
 async function requireAdmin(c: Parameters<typeof currentUser>[0]) {
   const user = await currentUser(c)

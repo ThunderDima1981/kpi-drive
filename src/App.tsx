@@ -8,7 +8,7 @@ import { ApiError, api } from './lib/api.ts'
 import { hrefFor, parseHash, type Route } from './lib/routes.ts'
 import type { User } from './lib/session.ts'
 import { RoleProvider } from './lib/role.tsx'
-import { clearTeamLocal, flushTeamSync, loadTeam, startTeamSync } from './lib/sync.ts'
+import { clearTeamLocal, flushTeamSync, loadTeam, startTeamEvents, startTeamSync } from './lib/sync.ts'
 
 type Session =
   | { status: 'loading' }
@@ -31,6 +31,11 @@ export default function App() {
       navigate({ name: 'dashboard' })
     }
   }, [route, session])
+
+  useEffect(() => {
+    if (session.status !== 'in') return
+    return startTeamEvents()
+  }, [session.status])
 
   useEffect(() => {
     if (session.status !== 'in') return

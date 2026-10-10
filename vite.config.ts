@@ -15,7 +15,11 @@ export default defineConfig({
     port: 4317,
     strictPort: true,
     proxy: {
-      '/api': 'http://127.0.0.1:4327',
+      '/api': {
+        target: 'http://127.0.0.1:4327',
+        timeout: 0,
+        proxyTimeout: 0,
+      },
     },
   },
 })

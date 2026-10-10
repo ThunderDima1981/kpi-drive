@@ -4,13 +4,19 @@ import { emptyTeam } from './period.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { TeamData } from '../types.ts'
 
+const clientId = crypto.randomUUID()
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 let enabled = false
 let subscribed = false
 let timer: ReturnType<typeof setTimeout> | null = null
 let pending: TeamData | null = null
+let saving = false
+let refreshing = false
+let refreshQueued = false
 let status: SaveStatus = 'idle'
+let events: EventSource | null = null
 const listeners = new Set<() => void>()
 
 function setStatus(next: SaveStatus) {
@@ -54,12 +60,57 @@ export function startTeamSync() {
 }
 
 async function saveTeam(snapshot: TeamData) {
+  saving = true
   try {
-    await api('/api/team', { method: 'PUT', body: JSON.stringify(snapshot) })
+    await api('/api/team', {
+      method: 'PUT',
+      body: JSON.stringify(snapshot),
+      headers: { 'x-client-id': clientId },
+    })
     setStatus('saved')
   } catch {
     setStatus('error')
+  } finally {
+    saving = false
+    if (refreshQueued) void refreshFromPeer()
   }
+}
+
+export function refreshFromPeer() {
+  if (timer || pending || saving || refreshing) {
+    refreshQueued = true
+    return
+  }
+  refreshQueued = false
+  refreshing = true
+  void loadTeam()
+    .catch(() => undefined)
+    .finally(() => {
+      refreshing = false
+      if (refreshQueued) refreshFromPeer()
+    })
+}
+
+export function startTeamEvents() {
+  stopTeamEvents()
+  const stream = new EventSource('/api/team/events')
+  events = stream
+  stream.addEventListener('team', (event) => {
+    let origin = ''
+    try {
+      origin = String(JSON.parse((event as MessageEvent).data)?.origin ?? '')
+    } catch {
+      origin = ''
+    }
+    if (origin === clientId) return
+    refreshFromPeer()
+  })
+  return stopTeamEvents
+}
+
+export function stopTeamEvents() {
+  events?.close()
+  events = null
 }
 
 export async function loadTeam() {
@@ -86,6 +137,8 @@ export function clearTeamLocal() {
     timer = null
   }
   pending = null
+  refreshQueued = false
+  stopTeamEvents()
   useTeamStore.getState().replaceTeam(emptyTeam())
   setStatus('idle')
 }
