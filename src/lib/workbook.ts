@@ -60,7 +60,7 @@ export function kpiTemplate(): SheetSpec[] {
 }
 
 export async function workbookFile(sheets: SheetSpec[]) {
-  const excel = await import('exceljs')
+  const excel = await loadExcel()
   const workbook = new excel.Workbook()
   for (const spec of sheets) {
     const sheet = workbook.addWorksheet(spec.name)
@@ -74,7 +74,7 @@ export async function workbookFile(sheets: SheetSpec[]) {
 }
 
 export async function readFirstSheet(data: ArrayBuffer) {
-  const excel = await import('exceljs')
+  const excel = await loadExcel()
   const workbook = new excel.Workbook()
   await workbook.xlsx.load(data)
   const sheet = workbook.worksheets[0]
@@ -97,6 +97,14 @@ export async function downloadWorkbook(filename: string, sheets: SheetSpec[]) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+async function loadExcel() {
+  const loaded = await import('exceljs')
+  if (typeof loaded.Workbook === 'function') return loaded
+  const fallback = (loaded as unknown as { default?: typeof loaded }).default
+  if (fallback && typeof fallback.Workbook === 'function') return fallback
+  throw new Error('Не удалось открыть Excel.')
 }
 
 function plainCell(value: unknown): unknown {
