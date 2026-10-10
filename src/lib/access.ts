@@ -1,4 +1,11 @@
 import { formatPeriod, freshPeriod, publishPeriods } from './period.ts'
+import {
+  canChangeStatus,
+  newSmartStatus,
+  newTaskStatusError,
+  statusChangeError,
+  type SmartActor,
+} from './smart-access.ts'
 import type { Employee, Indicator, PeriodSnapshot, SmartIndicator, SmartTask, TeamData } from '../types.ts'
 
 export type Role = 'admin' | 'user'
@@ -59,10 +66,15 @@ function indicatorAllowed(before: Indicator, after: Indicator) {
 
 function smartAllowed(before: SmartIndicator, after: SmartIndicator) {
   if (before.weight !== after.weight || stable(before.points) !== stable(after.points)) return false
-  return applySmartTasks(before, after) !== null
+  return Array.isArray(applySmartTasks(before, after, null, null))
 }
 
-function applySmartTasks(before: SmartIndicator, after: SmartIndicator): SmartTask[] | null {
+function applySmartTasks(
+  before: SmartIndicator,
+  after: SmartIndicator,
+  actor: SmartActor | null,
+  employee: { id: string; managerId: string | null } | null,
+): SmartTask[] | { error: string } | null {
   if (after.tasks.length < before.tasks.length) return null
   const afterTasks = new Map(after.tasks.map((task) => [task.id, task]))
   if (afterTasks.size !== after.tasks.length) return null
@@ -72,34 +84,38 @@ function applySmartTasks(before: SmartIndicator, after: SmartIndicator): SmartTa
     const next = afterTasks.get(task.id)
     if (!next || stable(withoutStatus(task)) !== stable(withoutStatus(next))) return null
     const statusOk =
-      next.status === task.status || (next.status === 'done' && task.status !== 'done' && task.status !== 'closed')
-    if (!statusOk) return null
+      actor && employee
+        ? canChangeStatus(actor, employee, task.status, next.status)
+        : next.status === task.status || (next.status === 'done' && task.status !== 'done' && task.status !== 'closed')
+    if (!statusOk) return actor && employee ? { error: statusChangeError(task.status, next.status) } : null
     tasks.push(next.status === task.status ? task : { ...task, status: next.status })
   }
   for (const task of after.tasks) {
     if (known.has(task.id)) continue
-    if (!newTaskAllowed(task)) return null
+    if (task.name.trim().length === 0 || !(task.weight > 0)) return null
+    if (actor && employee) {
+      const expected = newSmartStatus(actor, employee)
+      if (task.status !== expected) return { error: newTaskStatusError(expected) }
+    } else if (task.status !== 'created') {
+      return null
+    }
     tasks.push(task)
   }
   return tasks
-}
-
-function newTaskAllowed(task: SmartTask) {
-  return task.status === 'created' && task.name.trim().length > 0 && task.weight > 0
 }
 
 function withoutStatus(task: SmartTask) {
   return { ...task, status: 'created' }
 }
 
-export function visibleTeam(team: TeamData, allowedIds: ReadonlySet<string>) {
+export function visibleTeam(team: TeamData, allowedIds: ReadonlySet<string>, periodId = team.currentPeriod) {
   return publishPeriods(
     team.periods.map((period) => visiblePeriod(period, allowedIds)),
-    team.currentPeriod,
+    periodId,
   )
 }
 
-export function mergeUserTeam(stored: TeamData, incoming: TeamData, allowedIds: ReadonlySet<string>) {
+export function mergeUserTeam(stored: TeamData, incoming: TeamData, allowedIds: ReadonlySet<string>, actor: SmartActor) {
   if (!isPeriodSet(incoming)) return null
   if (incoming.periodLabel !== formatPeriod(incoming.currentPeriod)) return null
   const draft = structuredClone(stored)
@@ -108,13 +124,13 @@ export function mergeUserTeam(stored: TeamData, incoming: TeamData, allowedIds: 
     if (known.has(period.id)) {
       const current = draft.periods.find((item) => item.id === period.id)
       if (!current) return null
-      const merged = mergePeriod(current, period, allowedIds)
-      if (!merged) return null
+      const merged = mergePeriod(current, period, allowedIds, actor)
+      if (!isPeriod(merged)) return merged
       draft.periods = draft.periods.map((item) => (item.id === period.id ? merged : item))
       continue
     }
-    const created = createPeriod(draft.periods, period, allowedIds, stored.currentPeriod)
-    if (!created) return null
+    const created = createPeriod(draft.periods, period, allowedIds, stored.currentPeriod, actor)
+    if (!isPeriod(created)) return created
     draft.periods = [...draft.periods, created]
     known.add(created.id)
   }
@@ -136,7 +152,16 @@ function visiblePeriod(period: PeriodSnapshot, allowedIds: ReadonlySet<string>):
   }
 }
 
-function mergePeriod(stored: PeriodSnapshot, incoming: PeriodSnapshot, allowedIds: ReadonlySet<string>) {
+function isPeriod(value: PeriodSnapshot | { error: string } | null): value is PeriodSnapshot {
+  return Boolean(value && 'employees' in value)
+}
+
+function mergePeriod(
+  stored: PeriodSnapshot,
+  incoming: PeriodSnapshot,
+  allowedIds: ReadonlySet<string>,
+  actor: SmartActor,
+): PeriodSnapshot | { error: string } | null {
   const visible = visiblePeriod(stored, allowedIds).employees
   if (!sameIds(visible, incoming.employees)) return null
   const incomingEmployees = new Map(incoming.employees.map((employee) => [employee.id, employee]))
@@ -148,14 +173,19 @@ function mergePeriod(stored: PeriodSnapshot, incoming: PeriodSnapshot, allowedId
     }
     const next = incomingEmployees.get(employee.id)
     if (!next) return null
-    const applied = applyEmployeeEdit(employee, next)
+    const applied = applyEmployeeEdit(employee, next, actor)
     if (!applied) return null
+    if (!('indicators' in applied)) return applied
     employees.push(applied)
   }
   return { ...stored, employees }
 }
 
-function applyEmployeeEdit(before: Employee, after: Employee): Employee | null {
+function applyEmployeeEdit(
+  before: Employee,
+  after: Employee,
+  actor: SmartActor,
+): Employee | { error: string } | null {
   if (before.indicators.length !== after.indicators.length) return null
   const afterIndicators = new Map(after.indicators.map((indicator) => [indicator.id, indicator]))
   const indicators: Indicator[] = []
@@ -166,8 +196,8 @@ function applyEmployeeEdit(before: Employee, after: Employee): Employee | null {
       indicators.push(indicator)
       continue
     }
-    const tasks = applySmartTasks(indicator, next)
-    if (!tasks) return null
+    const tasks = applySmartTasks(indicator, next, actor, before)
+    if (!Array.isArray(tasks)) return tasks
     indicators.push({ ...indicator, tasks })
   }
   return { ...before, indicators }
@@ -178,18 +208,24 @@ function createPeriod(
   incoming: PeriodSnapshot,
   allowedIds: ReadonlySet<string>,
   currentPeriod: string,
-) {
+  actor: SmartActor,
+): PeriodSnapshot | { error: string } | null {
+  let statusError: string | null = null
   const ranked = storedPeriods
     .map((source) => {
       const base = freshPeriod(source, incoming.id)
-      const merged = mergePeriod(base, incoming, allowedIds)
+      const merged = mergePeriod(base, incoming, allowedIds, actor)
       if (!merged) return null
+      if (!isPeriod(merged)) {
+        statusError = merged.error
+        return null
+      }
       const exact = stable(ordered(visiblePeriod(base, allowedIds).employees)) === stable(ordered(incoming.employees))
       return { merged, exact, current: source.id === currentPeriod }
     })
     .filter((item): item is { merged: PeriodSnapshot; exact: boolean; current: boolean } => item !== null)
     .sort((a, b) => Number(b.exact) - Number(a.exact) || Number(b.current) - Number(a.current))
-  return ranked[0]?.merged ?? null
+  return ranked[0]?.merged ?? (statusError ? { error: statusError } : null)
 }
 
 function sameIds(before: Employee[], after: Employee[]) {

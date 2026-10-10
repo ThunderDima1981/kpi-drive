@@ -18,7 +18,10 @@ import {
   weightedOf,
 } from '../lib/calc.ts'
 import { formatNumber, formatPercent, initials, parseNumber, zoneOf, ZONES } from '../lib/format.ts'
-import { useIsAdmin } from '../lib/role.tsx'
+import { ApiError } from '../lib/api.ts'
+import { useActor, useIsAdmin } from '../lib/role.tsx'
+import { canChangeStatus, canMoveSmart } from '../lib/smart-access.ts'
+import { moveSmartToNextMonth } from '../lib/sync.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import { SMART_STATUS_LABEL, smartCompletion, smartGroupCompletion } from '../lib/smart.ts'
 import type { CatalogKpi, IndicatorType, KpiIndicator, SmartIndicator, SmartStatus, SmartTask, StandardIndicator } from '../types.ts'
@@ -43,6 +46,8 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
   const [weightEdit, setWeightEdit] = useState<KpiIndicator | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [smartChart, setSmartChart] = useState(false)
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const [moveError, setMoveError] = useState('')
   const admin = useIsAdmin()
 
   if (!employee) {
@@ -71,7 +76,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
     {
       type: 'smart',
       title: 'Smart-задачи',
-      hint: 'Блок со своим весом остаётся в матрице месяца. Задачи создаются заново в каждом месяце. Сумма их весов может быть больше 100%.',
+      hint: 'Блок со своим весом остаётся в матрице месяца. Задачи у каждого месяца свои. Сотрудник создаёт их со статусом «Создан», руководитель переводит в работу и закрывает выполненные. Сумма весов задач может быть больше 100%.',
       icon: ListChecks,
     },
     {
@@ -177,12 +182,24 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
             ) : group.type === 'smart' ? (
               <SmartBlock
                 admin={admin}
+                employee={employee}
                 group={items.find((item): item is SmartIndicator => item.type === 'smart') ?? null}
                 matrixWeightSum={result.weightSum}
                 pendingDelete={pendingDelete}
+                movingId={movingId}
+                moveError={moveError}
                 onChart={() => setSmartChart(true)}
                 onWeight={(weight) => setSmartWeight(employee.id, weight)}
                 onStatus={(id, status) => setStatus(employee.id, id, status)}
+                onMove={(id) => {
+                  setMoveError('')
+                  setMovingId(id)
+                  void moveSmartToNextMonth(employee.id, id)
+                    .catch((error: unknown) => {
+                      setMoveError(error instanceof ApiError ? error.message : 'Не удалось перенести задачу.')
+                    })
+                    .finally(() => setMovingId(null))
+                }}
                 onEdit={(task) => setEditor({ type: 'smart', task })}
                 onAskDelete={setPendingDelete}
                 onDeleteTask={(id) => {
@@ -401,53 +418,89 @@ function MatrixWeightField({
   )
 }
 
-function SmartAdvance({
-  name,
-  status,
-  admin,
+function SmartActions({
+  task,
+  employee,
+  moving,
   onStatus,
+  onMove,
 }: {
-  name: string
-  status: SmartStatus
-  admin: boolean
+  task: SmartTask
+  employee: { id: string; managerId: string | null }
+  moving: boolean
   onStatus: (status: SmartStatus) => void
+  onMove: () => void
 }) {
-  if (status === 'closed') return null
-  if (!admin && status === 'done') return null
-  const markDone = status !== 'done'
+  const actor = useActor()
+  const next = (['in_progress', 'done', 'closed'] as const).filter(
+    (status) => status !== task.status && canChangeStatus(actor, employee, task.status, status),
+  )
+  const move = task.status !== 'closed' && canMoveSmart(actor, employee)
+  if (next.length === 0 && !move) return null
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      aria-label={markDone ? `Отметить выполненной: ${name}` : `Закрыть: ${name}`}
-      onClick={() => onStatus(markDone ? 'done' : 'closed')}
-    >
-      {markDone ? 'Выполнено' : 'Закрыть'}
-    </Button>
+    <>
+      {next.map((status) => (
+        <Button
+          key={status}
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-label={
+            status === 'in_progress'
+              ? `Перевести в работу: ${task.name}`
+              : status === 'done'
+                ? `Отметить выполненной: ${task.name}`
+                : `Закрыть: ${task.name}`
+          }
+          onClick={() => onStatus(status)}
+        >
+          {status === 'in_progress' ? 'В работе' : status === 'done' ? 'Выполнено' : 'Закрыть'}
+        </Button>
+      ))}
+      {move ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={moving}
+          aria-label={`Перенести на следующий месяц: ${task.name}`}
+          onClick={onMove}
+        >
+          На следующий месяц
+        </Button>
+      ) : null}
+    </>
   )
 }
 
 function SmartBlock({
   admin,
+  employee,
   group,
   matrixWeightSum,
   pendingDelete,
+  movingId,
+  moveError,
   onChart,
   onWeight,
   onStatus,
+  onMove,
   onEdit,
   onAskDelete,
   onDeleteTask,
   onDeleteBlock,
 }: {
   admin: boolean
+  employee: { id: string; managerId: string | null }
   group: SmartIndicator | null
   matrixWeightSum: number
   pendingDelete: string | null
+  movingId: string | null
+  moveError: string
   onChart: () => void
   onWeight: (weight: number) => void
   onStatus: (id: string, status: SmartStatus) => void
+  onMove: (id: string) => void
   onEdit: (task: SmartTask) => void
   onAskDelete: (id: string | null) => void
   onDeleteTask: (id: string) => void
@@ -458,7 +511,7 @@ function SmartBlock({
       <p className="border-t border-line px-5 py-8 text-sm text-ink-soft">
         {admin
           ? 'В матрице пока нет блока Smart-задач. Нажмите «Создать», задайте вес блока и первую задачу.'
-          : 'Блок Smart-задач добавляет администратор. После этого здесь можно создавать задачи и отмечать их выполненными.'}
+          : 'Блок Smart-задач добавляет администратор. Сотрудник создаёт задачу со статусом «Создан», руководитель переводит её в работу и закрывает после выполнения.'}
       </p>
     )
   }
@@ -519,7 +572,7 @@ function SmartBlock({
         </p>
       ) : (
         <div className="overflow-x-auto border-t border-line">
-          <table className="w-full min-w-[820px] border-collapse text-sm">
+          <table className="w-full min-w-[980px] border-collapse text-sm">
             <thead className="bg-[#f7f3ea] text-left text-xs tracking-wide text-ink-soft uppercase">
               <tr>
                 <th className="px-4 py-3 font-medium">Название</th>
@@ -545,7 +598,13 @@ function SmartBlock({
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>{SMART_STATUS_LABEL[task.status]}</span>
-                        <SmartAdvance admin={admin} name={task.name} status={task.status} onStatus={(status) => onStatus(task.id, status)} />
+                        <SmartActions
+                          task={task}
+                          employee={employee}
+                          moving={movingId === task.id}
+                          onStatus={(status) => onStatus(task.id, status)}
+                          onMove={() => onMove(task.id)}
+                        />
                       </div>
                     </td>
                     <td className="px-3 py-3 font-semibold tabular-nums">{formatPercent(completion)}</td>
@@ -569,6 +628,11 @@ function SmartBlock({
           </table>
         </div>
       )}
+      {moveError ? (
+        <p role="alert" className="border-t border-line px-5 py-3 text-sm text-destructive">
+          {moveError}
+        </p>
+      ) : null}
     </div>
   )
 }

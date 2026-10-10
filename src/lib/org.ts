@@ -89,6 +89,24 @@ export function sanitizeEmployees(employees: Employee[]): Employee[] {
   const byId = new Map(employees.map((employee) => [employee.id, employee]))
   return employees.map((employee) => ({
     ...employee,
-    managerId: directManagerId(employee, byId),
+    managerId: acyclicManagerId(employee, byId),
   }))
+}
+
+function acyclicManagerId(employee: Employee, byId: Map<string, Employee>) {
+  const managerId = employee.managerId
+  if (!managerId || managerId === employee.id) return null
+  if (!byId.has(managerId)) return managerId
+  const seen = new Set<string>([employee.id])
+  let current: string | null = managerId
+  while (current) {
+    if (seen.has(current)) return null
+    seen.add(current)
+    const manager = byId.get(current)
+    if (!manager) return managerId
+    const next = manager.managerId
+    if (!next || next === current || !byId.has(next)) return managerId
+    current = next
+  }
+  return managerId
 }

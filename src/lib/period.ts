@@ -1,5 +1,5 @@
 import { startingFact } from './calc.ts'
-import type { Indicator, TeamData } from '../types.ts'
+import type { Indicator, SmartTask, TeamData } from '../types.ts'
 
 export const MONTHS = [
   'Январь',
@@ -27,6 +27,12 @@ export function parsePeriodId(id: string) {
   const month = Number(match[2])
   if (!Number.isInteger(year) || month < 1 || month > 12) return null
   return { year, month }
+}
+
+export function nextPeriodId(id: string) {
+  const parsed = parsePeriodId(id)
+  if (!parsed) return null
+  return parsed.month === 12 ? periodId(parsed.year + 1, 1) : periodId(parsed.year, parsed.month + 1)
 }
 
 export function formatPeriod(id: string) {
@@ -101,6 +107,68 @@ export function mapCurrentPeriod(
 ) {
   const periods = state.periods.map((period) => (period.id === state.currentPeriod ? update(period) : period))
   return publishPeriods(periods, state.currentPeriod)
+}
+
+export function moveSmartTask(
+  team: TeamData,
+  employeeId: string,
+  taskId: string,
+  sourcePeriodId: string,
+): { team: TeamData } | { error: string } {
+  const nextId = nextPeriodId(sourcePeriodId)
+  if (!nextId) return { error: 'Некорректный месяц.' }
+  const source = team.periods.find((period) => period.id === sourcePeriodId)
+  if (!source) return { error: 'Месяц не найден.' }
+  const employee = source.employees.find((item) => item.id === employeeId)
+  if (!employee) return { error: 'Сотрудник не найден.' }
+  const sourceSmart = employee.indicators.find(
+    (item) => item.type === 'smart' && item.tasks.some((task) => task.id === taskId),
+  )
+  if (!sourceSmart || sourceSmart.type !== 'smart') return { error: 'Задача не найдена.' }
+  const task = sourceSmart.tasks.find((item) => item.id === taskId)
+  if (!task) return { error: 'Задача не найдена.' }
+  if (task.status === 'closed') return { error: 'Закрытый смарт не переносится на следующий месяц.' }
+
+  let periods = team.periods
+  if (!periods.some((period) => period.id === nextId)) periods = [...periods, freshPeriod(source, nextId)]
+  const target = periods.find((period) => period.id === nextId)
+  const targetEmployee = target?.employees.find((item) => item.id === employeeId)
+  const targetSmart = targetEmployee?.indicators.find((item) => item.type === 'smart')
+  if (!targetSmart || targetSmart.type !== 'smart') {
+    return { error: 'В следующем месяце нет блока smart-задач. Администратор должен добавить блок.' }
+  }
+
+  const moved: SmartTask = { ...structuredClone(task), id: crypto.randomUUID() }
+  const nextPeriods = periods.map((period) => {
+    if (period.id === sourcePeriodId) {
+      return replaceSmartTasks(period, employeeId, sourceSmart.id, (tasks) => tasks.filter((item) => item.id !== taskId))
+    }
+    if (period.id === nextId) {
+      return replaceSmartTasks(period, employeeId, targetSmart.id, (tasks) => [...tasks, moved])
+    }
+    return period
+  })
+  return { team: publishPeriods(nextPeriods, team.currentPeriod) }
+}
+
+function replaceSmartTasks(
+  period: TeamData['periods'][number],
+  employeeId: string,
+  smartId: string,
+  update: (tasks: SmartTask[]) => SmartTask[],
+) {
+  return {
+    ...period,
+    employees: period.employees.map((employee) => {
+      if (employee.id !== employeeId) return employee
+      return {
+        ...employee,
+        indicators: employee.indicators.map((indicator) =>
+          indicator.type === 'smart' && indicator.id === smartId ? { ...indicator, tasks: update(indicator.tasks) } : indicator,
+        ),
+      }
+    }),
+  }
 }
 
 export function mapEveryPeriod(

@@ -59,21 +59,27 @@ export function startTeamSync() {
   })
 }
 
-async function saveTeam(snapshot: TeamData) {
+let savePromise: Promise<void> = Promise.resolve()
+
+function saveTeam(snapshot: TeamData) {
   saving = true
-  try {
-    await api('/api/team', {
-      method: 'PUT',
-      body: JSON.stringify(snapshot),
-      headers: { 'x-client-id': clientId },
-    })
-    setStatus('saved')
-  } catch {
-    setStatus('error')
-  } finally {
-    saving = false
-    if (refreshQueued) void refreshFromPeer()
-  }
+  const run = (async () => {
+    try {
+      await api('/api/team', {
+        method: 'PUT',
+        body: JSON.stringify(snapshot),
+        headers: { 'x-client-id': clientId },
+      })
+      setStatus('saved')
+    } catch {
+      setStatus('error')
+    } finally {
+      saving = false
+      if (refreshQueued) void refreshFromPeer()
+    }
+  })()
+  savePromise = run
+  return run
 }
 
 export function refreshFromPeer() {
@@ -122,12 +128,33 @@ export async function loadTeam() {
 }
 
 export async function flushTeamSync() {
-  if (!timer || !pending) return
-  clearTimeout(timer)
-  timer = null
-  const snapshot = pending
+  const snapshot = timer && pending ? pending : null
+  if (timer) {
+    clearTimeout(timer)
+    timer = null
+    pending = null
+  }
+  await savePromise
+  if (snapshot) await saveTeam(snapshot)
+}
+
+export async function moveSmartToNextMonth(employeeId: string, taskId: string) {
+  const periodId = useTeamStore.getState().currentPeriod
+  await flushTeamSync()
+  const data = await api<unknown>('/api/smart-tasks/move', {
+    method: 'POST',
+    body: JSON.stringify({ employeeId, taskId, periodId }),
+    headers: { 'x-client-id': clientId },
+  })
+  enableTeamSync(false)
+  if (timer) {
+    clearTimeout(timer)
+    timer = null
+  }
   pending = null
-  await saveTeam(snapshot)
+  useTeamStore.getState().replaceTeam(data)
+  setStatus('saved')
+  enableTeamSync(true)
 }
 
 export function clearTeamLocal() {

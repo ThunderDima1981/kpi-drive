@@ -117,7 +117,7 @@ export default function App() {
   }
 
   return (
-    <RoleProvider role={session.user.role}>
+    <RoleProvider role={session.user.role} employeeId={session.user.employeeId}>
     <Shell route={route} user={session.user} onNavigate={navigate} onLogout={() => void logout()}>
       {route.name === 'dashboard' ? (
         <Dashboard

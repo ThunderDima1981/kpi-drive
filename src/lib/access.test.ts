@@ -4,10 +4,17 @@ import { sanitizeEmployees } from './org.ts'
 import { publishPeriods } from './period.ts'
 import { defaultSmartPoints } from './smart.ts'
 import { mergeUserTeam, userChangeAllowed, visibleTeam } from './access.ts'
+import type { SmartActor } from './smart-access.ts'
 import type { SmartTask, TeamData } from '../types.ts'
 
 function task(status: SmartTask['status'], id = 'task'): SmartTask {
   return { id, name: 'Задача', weight: 40, detail: '', criterion: '', status, comments: [] }
+}
+
+const employeeActor: SmartActor = { role: 'user', employeeId: 'person' }
+
+function asSaved(value: ReturnType<typeof mergeUserTeam>) {
+  return value && 'saved' in value ? value : null
 }
 
 function team(status: SmartTask['status'] = 'created'): TeamData {
@@ -98,7 +105,7 @@ describe('user permissions', () => {
   })
 
   it('keeps hidden employees when a granted matrix changes', () => {
-    const stored = team()
+    const stored = team('in_progress')
     const hidden = structuredClone(stored.employees[0]!)
     hidden.id = 'hidden'
     hidden.name = 'Скрытый'
@@ -110,13 +117,13 @@ describe('user permissions', () => {
     if (smart?.type !== 'smart') throw new Error('missing smart')
     smart.tasks[0]!.status = 'done'
     incoming.periods[0]!.employees = incoming.employees
-    const merged = mergeUserTeam(stored, incoming, allowed)
+    const merged = asSaved(mergeUserTeam(stored, incoming, allowed, employeeActor))
     const savedPerson = merged?.saved.employees.find((item) => item.id === 'person')
     const savedHidden = merged?.saved.employees.find((item) => item.id === 'hidden')
     const personTask = savedPerson?.indicators.find((item) => item.type === 'smart')
     const hiddenTask = savedHidden?.indicators.find((item) => item.type === 'smart')
     expect(personTask?.type === 'smart' ? personTask.tasks[0]?.status : null).toBe('done')
-    expect(hiddenTask?.type === 'smart' ? hiddenTask.tasks[0]?.status : null).toBe('created')
+    expect(hiddenTask?.type === 'smart' ? hiddenTask.tasks[0]?.status : null).toBe('in_progress')
     expect(merged?.view.employees.map((item) => item.id)).toEqual(['person'])
   })
 
@@ -142,9 +149,11 @@ describe('user permissions', () => {
     if (smart?.type !== 'smart') throw new Error('missing smart')
     smart.tasks.push({ ...task('created', 'fresh'), name: 'Новая задача' })
     incoming.periods[0]!.employees = incoming.employees
-    expect(incoming.employees[0]?.managerId).toBeNull()
+    expect(incoming.employees[0]?.managerId).toBe('boss')
+    incoming.employees[0]!.managerId = null
+    incoming.periods[0]!.employees = incoming.employees
 
-    const merged = mergeUserTeam(stored, incoming, allowed)
+    const merged = asSaved(mergeUserTeam(stored, incoming, allowed, employeeActor))
     const savedPerson = merged?.saved.employees.find((item) => item.id === 'person')
     const savedBoss = merged?.saved.employees.find((item) => item.id === 'boss')
     const savedSmart = savedPerson?.indicators.find((item) => item.type === 'smart')
@@ -169,15 +178,83 @@ describe('user permissions', () => {
       tasks: [task('created', 'extra-task')],
     })
     block.periods[0]!.employees = block.employees
-    expect(mergeUserTeam(stored, block, allowed)).toBeNull()
+    expect(mergeUserTeam(stored, block, allowed, employeeActor)).toBeNull()
 
     const scored = structuredClone(visibleTeam(stored, allowed))
     const standard = scored.employees[0]?.indicators.find((item) => item.type === 'standard')
     if (standard?.type !== 'standard') throw new Error('missing standard')
     standard.score = 2
     scored.periods[0]!.employees = scored.employees
-    const merged = mergeUserTeam(stored, scored, allowed)
+    const merged = asSaved(mergeUserTeam(stored, scored, allowed, employeeActor))
     const saved = merged?.saved.employees[0]?.indicators.find((item) => item.type === 'standard')
     expect(saved?.type === 'standard' ? saved.score : null).toBe(0)
+  })
+
+  it('lets the employee mark in-progress work done and rejects the other transitions', () => {
+    const started = team('in_progress')
+    const done = structuredClone(visibleTeam(started, new Set(['person'])))
+    const smart = done.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (smart?.type !== 'smart') throw new Error('missing smart')
+    smart.tasks[0]!.status = 'done'
+    done.periods[0]!.employees = done.employees
+    const merged = mergeUserTeam(started, done, new Set(['person']), employeeActor)
+    const saved = merged && 'saved' in merged ? merged.saved : null
+    const savedSmart = saved?.employees[0]?.indicators.find((item) => item.type === 'smart')
+    expect(savedSmart?.type === 'smart' ? savedSmart.tasks[0]?.status : null).toBe('done')
+
+    const created = team()
+    const jumped = structuredClone(visibleTeam(created, new Set(['person'])))
+    const createdSmart = jumped.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (createdSmart?.type !== 'smart') throw new Error('missing smart')
+    createdSmart.tasks[0]!.status = 'in_progress'
+    jumped.periods[0]!.employees = jumped.employees
+    const rejected = mergeUserTeam(created, jumped, new Set(['person']), employeeActor)
+    expect(rejected && 'error' in rejected ? rejected.error : '').toBe(
+      'В статус «В работе» смарт переводит руководитель или администратор.',
+    )
+
+    const finished = team('done')
+    const closed = structuredClone(visibleTeam(finished, new Set(['person'])))
+    const doneSmart = closed.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (doneSmart?.type !== 'smart') throw new Error('missing smart')
+    doneSmart.tasks[0]!.status = 'closed'
+    closed.periods[0]!.employees = closed.employees
+    const closeRejected = mergeUserTeam(finished, closed, new Set(['person']), employeeActor)
+    expect(closeRejected && 'error' in closeRejected ? closeRejected.error : '').toBe(
+      'Статус «Закрыт» ставит только руководитель сотрудника.',
+    )
+  })
+
+  it('lets the direct manager start, create and close a subordinate task', () => {
+    const stored = team()
+    const person = stored.employees[0]!
+    person.managerId = 'boss'
+    stored.periods[0]!.employees = [person]
+    stored.employees = [person]
+    const manager: SmartActor = { role: 'user', employeeId: 'boss' }
+    const allowed = new Set(['person'])
+    const started = structuredClone(visibleTeam(stored, allowed))
+    const smart = started.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (smart?.type !== 'smart') throw new Error('missing smart')
+    smart.tasks[0]!.status = 'in_progress'
+    smart.tasks.push({ ...task('in_progress', 'assigned'), name: 'От руководителя' })
+    started.periods[0]!.employees = started.employees
+    const merged = mergeUserTeam(stored, started, allowed, manager)
+    const savedSmart = merged && 'saved' in merged ? merged.saved.employees[0]?.indicators.find((item) => item.type === 'smart') : null
+    expect(savedSmart?.type === 'smart' ? savedSmart.tasks.map((item) => item.status) : []).toEqual(['in_progress', 'in_progress'])
+
+    const withDone = structuredClone(merged && 'saved' in merged ? merged.saved : stored)
+    const doneSmart = withDone.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (doneSmart?.type !== 'smart') throw new Error('missing smart')
+    doneSmart.tasks[0]!.status = 'done'
+    withDone.periods[0]!.employees = withDone.employees
+    const closed = structuredClone(withDone)
+    const closing = closed.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (closing?.type !== 'smart') throw new Error('missing smart')
+    closing.tasks[0]!.status = 'closed'
+    closed.periods[0]!.employees = closed.employees
+    const confirmed = mergeUserTeam(withDone, closed, allowed, manager)
+    const confirmedSmart = confirmed && 'saved' in confirmed ? confirmed.saved.employees[0]?.indicators.find((item) => item.type === 'smart') : null
+    expect(confirmedSmart?.type === 'smart' ? confirmedSmart.tasks[0]?.status : null).toBe('closed')
   })
 })

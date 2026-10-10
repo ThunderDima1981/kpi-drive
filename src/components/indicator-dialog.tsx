@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { defaultStandardPoints, fitsMatrixWeight } from '../lib/calc.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
+import { useActor } from '../lib/role.tsx'
+import { canChangeStatus, newSmartStatus } from '../lib/smart-access.ts'
 import { formatCommentDate, SMART_STATUS_LABEL, SMART_STATUSES } from '../lib/smart.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { Indicator, IndicatorType, SmartComment, SmartStatus, SmartTask, StandardScore } from '../types.ts'
@@ -92,6 +94,7 @@ export function IndicatorDialog({
   defaultType: IndicatorType
   onOpenChange: (open: boolean) => void
 }) {
+  const actor = useActor()
   const employees = useTeamStore((state) => state.employees)
   const addIndicator = useTeamStore((state) => state.addIndicator)
   const updateIndicator = useTeamStore((state) => state.updateIndicator)
@@ -115,6 +118,12 @@ export function IndicatorDialog({
 
   const indicatorType = initial?.type ?? defaultType
   const employee = employees.find((item) => item.id === employeeId)
+  const createdStatus = employee ? newSmartStatus(actor, employee) : 'created'
+  const statusChoices = smartTask
+    ? SMART_STATUSES.filter(
+        (status) => status === smartTask.status || (employee ? canChangeStatus(actor, employee, smartTask.status, status) : false),
+      )
+    : null
   const smartGroup = employee?.indicators.find((indicator) => indicator.type === 'smart')
   const parsedWeight = parseNumber(draft.weight)
   const otherWeight =
@@ -156,6 +165,9 @@ export function IndicatorDialog({
       ) {
         nextErrors.matrixWeight = 'Сумма весов матрицы не может быть больше 100%.'
       }
+      if (smartTask && employee && !canChangeStatus(actor, employee, smartTask.status, draft.status)) {
+        nextErrors.status = 'Этот переход статуса недоступен.'
+      }
       if (Object.keys(nextErrors).length > 0 || weight === null) {
         setErrors(nextErrors)
         return
@@ -166,7 +178,7 @@ export function IndicatorDialog({
         weight,
         detail: draft.detail.trim(),
         criterion: draft.criterion.trim(),
-        status: smartTask ? draft.status : 'created',
+        status: smartTask ? draft.status : createdStatus,
         comments: draft.comments,
       }
       if (smartTask) updateSmartTask(employeeId, task)
@@ -259,7 +271,9 @@ export function IndicatorDialog({
             {indicatorType === 'smart' ? (
               <SmartFields
                 draft={draft}
-                statusEditable={Boolean(smartTask)}
+                statusChoices={statusChoices}
+                fixedStatus={createdStatus}
+                statusError={errors.status}
                 commentText={commentText}
                 commentError={commentError}
                 onDraft={setDraft}
@@ -377,7 +391,9 @@ function Field({
 
 function SmartFields({
   draft,
-  statusEditable,
+  statusChoices,
+  fixedStatus,
+  statusError,
   commentText,
   commentError,
   onDraft,
@@ -385,7 +401,9 @@ function SmartFields({
   onAddComment,
 }: {
   draft: Draft
-  statusEditable: boolean
+  statusChoices: SmartStatus[] | null
+  fixedStatus: SmartStatus
+  statusError?: string
   commentText: string
   commentError: string
   onDraft: (update: (current: Draft) => Draft) => void
@@ -410,9 +428,9 @@ function SmartFields({
       </Field>
       <div>
         <p className="mb-2 text-sm font-medium">Статус</p>
-        {statusEditable ? (
+        {statusChoices && statusChoices.length > 1 ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Статус smart-задачи">
-            {SMART_STATUSES.map((status) => {
+            {statusChoices.map((status) => {
               const selected = draft.status === status
               return (
                 <button
@@ -431,12 +449,15 @@ function SmartFields({
             })}
           </div>
         ) : (
-          <p className="text-sm">Создан</p>
+          <p className="text-sm">{SMART_STATUS_LABEL[statusChoices?.[0] ?? fixedStatus]}</p>
         )}
+        {statusError ? <p className="mt-2 text-xs text-destructive">{statusError}</p> : null}
         <p className="mt-2 text-xs text-ink-soft">
-          {statusEditable
-            ? 'Закрыт — 100% выполнения. Создан, в работе и выполнено — 0%.'
-            : 'Новая задача сразу получает статус «Создан».'}
+          {statusChoices
+            ? 'Закрыт — 100% выполнения. Создан, в работе и выполнено — 0%. Доступны только разрешённые вам переходы.'
+            : fixedStatus === 'in_progress'
+              ? 'Руководитель создаёт задачу сразу со статусом «В работе».'
+              : 'Новая задача получает статус «Создан». В работу её переводит руководитель или администратор.'}
         </p>
       </div>
       <div className="rounded-xl border border-line px-3 py-3">

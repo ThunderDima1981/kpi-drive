@@ -23,7 +23,7 @@ describe('employee hierarchy', () => {
       person('b', 'Б', 'a'),
       person('c', 'В', 'missing'),
     ])
-    expect(employees.map((employee) => employee.managerId)).toEqual([null, null, null])
+    expect(employees.map((employee) => employee.managerId)).toEqual([null, null, 'missing'])
     const byId = new Map(employees.map((employee) => [employee.id, employee]))
     expect(directManagerId(employees[0]!, byId)).toBeNull()
   })

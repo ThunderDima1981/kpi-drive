@@ -5,7 +5,8 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { streamSSE } from 'hono/streaming'
 import { publishTeamUpdate, subscribeTeamUpdates } from '../src/lib/team-live.ts'
 import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
-import { emptyTeam } from '../src/lib/period.ts'
+import { emptyTeam, moveSmartTask, parsePeriodId } from '../src/lib/period.ts'
+import { canMoveSmart, smartChangeError } from '../src/lib/smart-access.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
 import { hashPassword, temporaryPassword, verifyPassword } from './password.ts'
@@ -243,13 +244,48 @@ app.get('/api/team', async (c) => {
   return c.json(visibleTeam(document, new Set(user.matrixIds)))
 })
 
+app.post('/api/smart-tasks/move', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  const body = await readJson(c)
+  const employeeId = typeof body?.employeeId === 'string' ? body.employeeId : ''
+  const taskId = typeof body?.taskId === 'string' ? body.taskId : ''
+  const periodId = typeof body?.periodId === 'string' ? body.periodId : ''
+  if (!employeeId || employeeId.length > 80 || !taskId || taskId.length > 80 || !parsePeriodId(periodId)) {
+    return c.json({ error: 'Некорректный запрос.' }, 400)
+  }
+  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const stored = await loadTeamDocument(ownerId)
+  if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const employee = stored.periods.find((period) => period.id === periodId)?.employees.find((item) => item.id === employeeId)
+  if (!employee) return c.json({ error: 'Сотрудник не найден.' }, 404)
+  if (user.role !== 'admin' && !user.matrixIds.includes(employeeId)) {
+    return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
+  }
+  if (!canMoveSmart({ role: user.role, employeeId: user.employeeId }, employee)) {
+    return c.json({ error: 'Перенести смарт может сотрудник, его руководитель или администратор.' }, 403)
+  }
+  const moved = moveSmartTask(stored, employeeId, taskId, periodId)
+  if ('error' in moved) return c.json({ error: moved.error }, 400)
+  if (JSON.stringify(moved.team).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
+  await saveTeamDocument(ownerId, moved.team)
+  publishTeamUpdate(ownerId, clientOrigin(c))
+  if (user.role === 'admin') return c.json(moved.team)
+  return c.json(visibleTeam(moved.team, new Set(user.matrixIds), periodId))
+})
+
 app.put('/api/team', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
   const body = await readJson(c)
   if (!isTeamDocument(body)) return c.json({ error: 'Некорректные данные команды.' }, 400)
   if (JSON.stringify(body).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
+  const actor = { role: user.role, employeeId: user.employeeId }
   if (user.role === 'admin') {
+    const stored = (await loadTeamDocument(user.id)) ?? emptyTeam()
+    const statusError = smartChangeError(stored, body, actor)
+    if (statusError) return c.json({ error: statusError }, 403)
     await saveTeamDocument(user.id, body)
     publishTeamUpdate(user.id, clientOrigin(c))
     return c.json(body)
@@ -257,8 +293,10 @@ app.put('/api/team', async (c) => {
   if (!user.teamOwnerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   const stored = await loadTeamDocument(user.teamOwnerId)
   if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
-  const merged = mergeUserTeam(stored, body, new Set(user.matrixIds))
-  if (!merged) return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
+  const merged = mergeUserTeam(stored, body, new Set(user.matrixIds), actor)
+  if (!merged || !('saved' in merged)) {
+    return c.json({ error: merged && 'error' in merged ? merged.error : 'Эти правки доступны только администратору.' }, 403)
+  }
   if (JSON.stringify(merged.saved).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
   await saveTeamDocument(user.teamOwnerId, merged.saved)
   publishTeamUpdate(user.teamOwnerId, clientOrigin(c))
@@ -398,7 +436,16 @@ async function readJson(c: { req: { json: () => Promise<unknown> } }) {
   try {
     const body = await c.req.json()
     return body && typeof body === 'object'
-      ? (body as { email?: unknown; name?: unknown; password?: unknown; role?: unknown; employeeId?: unknown; matrixIds?: unknown })
+      ? (body as {
+          email?: unknown
+          name?: unknown
+          password?: unknown
+          role?: unknown
+          employeeId?: unknown
+          matrixIds?: unknown
+          taskId?: unknown
+          periodId?: unknown
+        })
       : null
   } catch {
     return null
