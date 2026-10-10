@@ -5,7 +5,7 @@ import { MatrixView } from './components/matrix-view.tsx'
 import { SettingsView } from './components/settings-view.tsx'
 import { Shell } from './components/shell.tsx'
 import { ApiError, api } from './lib/api.ts'
-import { hrefFor, parseHash, type Route } from './lib/routes.ts'
+import { hrefFor, parseHash, SETTINGS_SECTIONS, type Route } from './lib/routes.ts'
 import type { User } from './lib/session.ts'
 import { RoleProvider } from './lib/role.tsx'
 import { clearTeamLocal, flushTeamSync, loadTeam, startTeamEvents, startTeamSync } from './lib/sync.ts'
@@ -39,7 +39,10 @@ export default function App() {
 
   useEffect(() => {
     if (session.status !== 'in') return
-    if (route.name === 'settings') document.title = 'Настройки команды — KPI-Drive'
+    if (route.name === 'settings') {
+      const section = SETTINGS_SECTIONS.find((item) => item.id === route.section)
+      document.title = `${section?.title ?? 'Настройки'} — KPI-Drive`
+    }
     else if (route.name === 'matrix') document.title = 'Матрица КР — KPI-Drive'
     else document.title = 'Результативность команды — KPI-Drive'
   }, [route, session.status])
@@ -122,7 +125,7 @@ export default function App() {
       {route.name === 'dashboard' ? (
         <Dashboard
           onOpenEmployee={(employeeId) => navigate({ name: 'matrix', employeeId })}
-          onOpenSettings={() => navigate({ name: 'settings' })}
+          onOpenSettings={() => navigate({ name: 'settings', section: 'team' })}
         />
       ) : null}
       {route.name === 'matrix' ? (
@@ -130,6 +133,7 @@ export default function App() {
       ) : null}
       {route.name === 'settings' && session.user.role === 'admin' ? (
         <SettingsView
+          section={route.section}
           currentUserId={session.user.id}
           onAccountChange={(user) => {
             if (user.id === session.user.id) setSession({ status: 'in', user })

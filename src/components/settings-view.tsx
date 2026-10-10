@@ -9,16 +9,19 @@ import { UsersSection } from './users-section.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { initials } from '../lib/format.ts'
 import { managerChoices, type OrgNode } from '../lib/org.ts'
+import { SETTINGS_SECTIONS, type SettingsSection } from '../lib/routes.ts'
 import type { User } from '../lib/session.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { Employee } from '../types.ts'
 
 export function SettingsView({
+  section,
   currentUserId,
   onAccountChange,
   onSelfRemoved,
   onOpenEmployee,
 }: {
+  section: SettingsSection
   currentUserId: string
   onAccountChange: (user: User) => void
   onSelfRemoved: () => void
@@ -45,20 +48,24 @@ export function SettingsView({
     setError('')
   }
 
+  const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0]
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <header>
-        <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">Команда</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">Настройки</h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-          Состав команды и матрицы хранятся в базе для вашей учётной записи. Расчёт по-прежнему только про коэффициент результативности.
-        </p>
+        <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">Настройки</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight">{current.title}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{current.description}</p>
       </header>
 
-      <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-        <PeriodCalendar value={currentPeriod} onChange={selectPeriod} />
-      </section>
+      {section === 'team' ? (
+        <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
+          <PeriodCalendar value={currentPeriod} onChange={selectPeriod} />
+        </section>
+      ) : null}
 
+      {section === 'team' ? (
+      <>
       <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
         <h2 className="font-semibold">Новый сотрудник</h2>
         <form onSubmit={add} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -95,14 +102,18 @@ export function SettingsView({
           </div>
         )}
       </section>
+      </>
+      ) : null}
 
-      <KpiCatalogSection />
-      <UsersSection
-        currentUserId={currentUserId}
-        onAccountChange={onAccountChange}
-        onSelfRemoved={onSelfRemoved}
-        onOpenEmployee={onOpenEmployee}
-      />
+      {section === 'kpi' ? <KpiCatalogSection /> : null}
+      {section === 'users' ? (
+        <UsersSection
+          currentUserId={currentUserId}
+          onAccountChange={onAccountChange}
+          onSelfRemoved={onSelfRemoved}
+          onOpenEmployee={onOpenEmployee}
+        />
+      ) : null}
     </div>
   )
 }

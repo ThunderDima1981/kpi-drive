@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import type { OrgNode } from '../lib/org.ts'
-import type { Route } from '../lib/routes.ts'
+import { SETTINGS_SECTIONS, type Route } from '../lib/routes.ts'
 import type { User } from '../lib/session.ts'
 import { useIsAdmin } from '../lib/role.tsx'
 import { useSaveStatus } from '../lib/sync.ts'
@@ -108,12 +108,33 @@ function Sidebar({
           label="Дашборд"
         />
         {admin ? (
-          <NavButton
-            active={route.name === 'settings'}
-            onClick={() => onNavigate({ name: 'settings' })}
-            icon={<Settings className="size-4" />}
-            label="Настройки"
-          />
+          <div className="grid gap-0.5">
+            <NavButton
+              active={route.name === 'settings'}
+              onClick={() => onNavigate({ name: 'settings', section: 'team' })}
+              icon={<Settings className="size-4" />}
+              label="Настройки"
+            />
+            <div className="grid gap-0.5 py-0.5 pl-7">
+              {SETTINGS_SECTIONS.map((section) => {
+                const active = route.name === 'settings' && route.section === section.id
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => onNavigate({ name: 'settings', section: section.id })}
+                    className={cn(
+                      'rounded-lg px-2 py-1.5 text-left text-sm',
+                      active ? 'bg-white/10 font-medium text-white' : 'text-white/65 hover:bg-white/5 hover:text-white',
+                    )}
+                  >
+                    {section.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         ) : null}
       </nav>
       <p className="mt-6 px-5 text-[11px] font-semibold tracking-[0.16em] text-white/45 uppercase">Матрицы</p>
