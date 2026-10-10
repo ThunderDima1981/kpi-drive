@@ -264,7 +264,7 @@ app.post('/api/smart-tasks/move', async (c) => {
     return c.json({ error: 'Эти правки доступны только администратору.' }, 403)
   }
   if (!canMoveSmart({ role: user.role, employeeId: user.employeeId }, employee)) {
-    return c.json({ error: 'Перенести смарт может сотрудник, его руководитель или администратор.' }, 403)
+    return c.json({ error: 'Перенести смарт на следующий месяц может только руководитель сотрудника.' }, 403)
   }
   const moved = moveSmartTask(stored, employeeId, taskId, periodId)
   if ('error' in moved) return c.json({ error: moved.error }, 400)

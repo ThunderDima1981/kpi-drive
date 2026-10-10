@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { ExcelButtons } from './excel-buttons.tsx'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -13,6 +14,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Role } from '../lib/access.ts'
 import { api } from '../lib/api.ts'
+import { importReport, matchEmployee, parseUserSheet, type SheetIssue } from '../lib/spreadsheet.ts'
+import { downloadWorkbook, readFirstSheet, userTemplate } from '../lib/workbook.ts'
 import type { User } from '../lib/session.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
@@ -41,6 +44,8 @@ export function UsersSection({
   const [resetFor, setResetFor] = useState<User | null>(null)
   const [resetPassword, setResetPassword] = useState<{ name: string; password: string } | null>(null)
   const [deleteFor, setDeleteFor] = useState<User | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState('')
 
   function replace(user: User) {
     setUsers((items) => items.map((item) => (item.id === user.id ? user : item)))
@@ -61,6 +66,68 @@ export function UsersSection({
     }
   }, [])
 
+  async function importUsers(file: File) {
+    setImporting(true)
+    setImportMessage('')
+    try {
+      const parsed = parseUserSheet(await readFirstSheet(await file.arrayBuffer()))
+      const created: User[] = []
+      const problems: SheetIssue[] = [...parsed.errors]
+      for (const row of parsed.rows) {
+        const employee = matchEmployee(row.employeeName, employees)
+        if ('error' in employee) {
+          problems.push({ line: row.line, message: employee.error })
+          continue
+        }
+        const matrixIds: string[] = []
+        let matrixError = ''
+        for (const matrixName of row.matrixNames) {
+          const match = matchEmployee(matrixName, employees)
+          if ('error' in match) {
+            matrixError = match.error
+            break
+          }
+          if (!match.id) {
+            matrixError = 'Укажите матрицу.'
+            break
+          }
+          if (!matrixIds.includes(match.id)) matrixIds.push(match.id)
+        }
+        if (matrixError) {
+          problems.push({ line: row.line, message: matrixError })
+          continue
+        }
+        if (employee.id && !matrixIds.includes(employee.id)) matrixIds.unshift(employee.id)
+        try {
+          const result = await api<{ user: User }>('/api/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: row.name,
+              email: row.email,
+              password: row.password,
+              role: row.role,
+              employeeId: employee.id,
+              matrixIds,
+            }),
+          })
+          created.push(result.user)
+        } catch (reason) {
+          problems.push({ line: row.line, message: reason instanceof Error ? reason.message : 'Не удалось создать пользователя.' })
+        }
+      }
+      if (created.length > 0) {
+        setUsers((items) =>
+          [...items, ...created].sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.email.localeCompare(b.email)),
+        )
+      }
+      setImportMessage(importReport(created.length, problems, 'Создано'))
+    } catch {
+      setImportMessage('Не удалось прочитать файл. Нужен шаблон Excel .xlsx.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -71,10 +138,24 @@ export function UsersSection({
             Пользователь в открытых матрицах создаёт smart-задачи и ставит статус «Выполнено».
           </p>
         </div>
-        <Button type="button" variant={adding ? 'outline' : 'default'} onClick={() => setAdding((open) => !open)}>
-          {adding ? 'Закрыть форму' : 'Добавить пользователя'}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <ExcelButtons
+            templateLabel="Скачать шаблон"
+            uploadLabel="Загрузить пользователей"
+            busy={importing}
+            onTemplate={() => void downloadWorkbook('polzovateli.xlsx', userTemplate()).catch(() => setImportMessage('Не удалось подготовить шаблон.'))}
+            onFile={(file) => void importUsers(file)}
+          />
+          <Button type="button" variant={adding ? 'outline' : 'default'} onClick={() => setAdding((open) => !open)}>
+            {adding ? 'Закрыть форму' : 'Добавить пользователя'}
+          </Button>
+        </div>
       </div>
+      {importMessage ? (
+        <p role="status" className="mt-3 text-sm text-ink-soft">
+          {importMessage}
+        </p>
+      ) : null}
 
       {adding ? (
         <AddUserForm

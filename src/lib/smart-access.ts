@@ -34,7 +34,7 @@ export function canChangeStatus(actor: SmartActor, employee: MatrixEmployee, fro
 }
 
 export function canMoveSmart(actor: SmartActor, employee: MatrixEmployee) {
-  return actor.role === 'admin' || actor.employeeId === employee.id || isDirectManager(actor, employee)
+  return isDirectManager(actor, employee)
 }
 
 export function statusChangeError(from: SmartStatus, to: SmartStatus) {

@@ -170,10 +170,11 @@ describe('move smart task to the next month', () => {
     })
   })
 
-  it('allows the employee, the direct manager and an administrator to move a task', () => {
-    expect(canMoveSmart(employee, matrix)).toBe(true)
+  it('lets only the direct manager move a task to the next month', () => {
     expect(canMoveSmart(manager, matrix)).toBe(true)
-    expect(canMoveSmart(admin, matrix)).toBe(true)
+    expect(canMoveSmart({ role: 'admin', employeeId: 'boss' }, matrix)).toBe(true)
+    expect(canMoveSmart(employee, matrix)).toBe(false)
+    expect(canMoveSmart(admin, matrix)).toBe(false)
     expect(canMoveSmart(stranger, matrix)).toBe(false)
   })
 })
