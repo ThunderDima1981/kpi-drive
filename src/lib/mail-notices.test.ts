@@ -45,7 +45,9 @@ describe('smart mail', () => {
   it('tells the employee and the manager when the manager creates the task', () => {
     const letters = smartLetters(team('in_progress', []), team('in_progress'), manager)
     expect(letters.map((letter) => letter.toEmployeeId)).toEqual(['person', 'boss'])
-    expect(letters[0]?.subject).toContain('Вам создали')
+    expect(letters[0]?.text).toBe(
+      'Вам создана smart-задача «Отчёт» в матрице за Октябрь 2026. Создал: Павел Орлов. Статус: В работе.',
+    )
     expect(letters[1]?.subject).toContain('сотруднику Ирина Соколова')
   })
 

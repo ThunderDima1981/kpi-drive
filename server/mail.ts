@@ -50,12 +50,21 @@ export async function saveMailConfig(input: {
 }
 
 export async function sendTestMail(to: string) {
-  const settings = await readMail()
-  if (!settings.host || !settings.from) throw new Error('Укажите сервер и адрес отправителя.')
-  await sendMessages(settings, [{ to, subject: 'Проверочное письмо KPI-Drive', text: 'Подключение к почтовому серверу работает.' }])
+  await sendLetter(to, 'Проверочное письмо KPI-Drive', 'Подключение к почтовому серверу работает.')
 }
 
-export async function deliverSmartMail(ownerId: string, before: TeamData, after: TeamData, actor: SmartActor) {
+export async function sendLetter(to: string, subject: string, text: string) {
+  const settings = await readMail()
+  if (!settings.host || !settings.from) throw new Error('Укажите сервер и адрес отправителя.')
+  await sendMessages(settings, [{ to, subject, text }])
+}
+
+export async function deliverSmartMail(
+  ownerId: string,
+  before: TeamData,
+  after: TeamData,
+  actor: SmartActor & { name?: string },
+) {
   const letters = smartLetters(before, after, actor)
   if (letters.length === 0) return
   const settings = await readMail()

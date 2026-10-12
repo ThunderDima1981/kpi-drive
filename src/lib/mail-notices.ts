@@ -18,7 +18,7 @@ type LocatedTask = {
   task: SmartTask
 }
 
-export function smartLetters(before: TeamData, after: TeamData, actor: SmartActor): MailLetter[] {
+export function smartLetters(before: TeamData, after: TeamData, actor: SmartActor & { name?: string }): MailLetter[] {
   const beforeTasks = collectTasks(before)
   const afterTasks = collectTasks(after)
   const beforeById = new Map(beforeTasks.map((item) => [item.task.id, item]))
@@ -34,7 +34,7 @@ export function smartLetters(before: TeamData, after: TeamData, actor: SmartActo
   const letters: MailLetter[] = []
   for (const item of added) {
     if (moved.has(item.task.id)) continue
-    letters.push(...creationLetters(item, actor))
+    letters.push(...creationLetters(item, actor, creatorName(after, actor)))
   }
   for (const item of afterTasks) {
     const prior = beforeById.get(item.task.id)
@@ -87,7 +87,17 @@ function commentText(task: SmartTask) {
   return task.comments.map((comment) => `${comment.text}\n${comment.createdAt}`).join('\n')
 }
 
-function creationLetters(item: LocatedTask, actor: SmartActor): MailLetter[] {
+function creatorName(team: TeamData, actor: SmartActor & { name?: string }) {
+  if (actor.employeeId) {
+    for (const period of team.periods) {
+      const person = period.employees.find((employee) => employee.id === actor.employeeId)
+      if (person?.name.trim()) return person.name.trim()
+    }
+  }
+  return actor.name?.trim() || 'Руководитель'
+}
+
+function creationLetters(item: LocatedTask, actor: SmartActor, creator: string): MailLetter[] {
   const period = formatPeriod(item.periodId)
   const status = SMART_STATUS_LABEL[item.task.status]
   const name = item.task.name
@@ -102,7 +112,7 @@ function creationLetters(item: LocatedTask, actor: SmartActor): MailLetter[] {
       : {
           toEmployeeId: item.employeeId,
           subject: `Вам создали smart-задачу «${name}»`,
-          text: `В матрице за ${period} вам создана задача «${name}». Статус: ${status}.`,
+          text: `Вам создана smart-задача «${name}» в матрице за ${period}. Создал: ${creator}. Статус: ${status}.`,
         },
   ]
   const others = new Set<string>()

@@ -284,7 +284,7 @@ app.put('/api/team', async (c) => {
   const body = await readJson(c)
   if (!isTeamDocument(body)) return c.json({ error: 'Некорректные данные команды.' }, 400)
   if (JSON.stringify(body).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
-  const actor = { role: user.role, employeeId: user.employeeId }
+  const actor = { role: user.role, employeeId: user.employeeId, name: user.name }
   if (user.role === 'admin') {
     const stored = (await loadTeamDocument(user.id)) ?? emptyTeam()
     const statusError = smartChangeError(stored, body, actor)
