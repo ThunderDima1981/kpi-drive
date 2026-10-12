@@ -88,11 +88,16 @@ function Sidebar({
   const admin = useIsAdmin()
   const periods = useTeamStore((state) => state.periods)
   const [periodOpen, setPeriodOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(route.name === 'settings')
   const [remoteEvaluations, setRemoteEvaluations] = useState(false)
   const org = useOrgList(employees)
   const evaluatesOthers =
     remoteEvaluations ||
     hasEvaluations({ periods, currentPeriod, periodLabel, employees, kpiCatalog: [] }, user.employeeId)
+
+  useEffect(() => {
+    setSettingsOpen(route.name === 'settings')
+  }, [route.name])
 
   useEffect(() => {
     let cancelled = false
@@ -143,10 +148,19 @@ function Sidebar({
           <div className="grid gap-0.5">
             <NavButton
               active={route.name === 'settings'}
-              onClick={() => onNavigate({ name: 'settings', section: 'team' })}
+              expanded={settingsOpen}
+              onClick={() => {
+                if (settingsOpen) {
+                  setSettingsOpen(false)
+                  return
+                }
+                setSettingsOpen(true)
+                if (route.name !== 'settings') onNavigate({ name: 'settings', section: 'team' })
+              }}
               icon={<Settings className="size-4" />}
               label="Настройки"
             />
+            {settingsOpen ? (
             <div className="grid gap-0.5 py-0.5 pl-7">
               {SETTINGS_SECTIONS.map((section) => {
                 const active = route.name === 'settings' && route.section === section.id
@@ -166,6 +180,7 @@ function Sidebar({
                 )
               })}
             </div>
+            ) : null}
           </div>
         ) : null}
       </nav>
@@ -285,11 +300,13 @@ function SidebarBranches({
 
 function NavButton({
   active,
+  expanded,
   onClick,
   icon,
   label,
 }: {
   active: boolean
+  expanded?: boolean
   onClick: () => void
   icon: React.ReactNode
   label: string
@@ -297,6 +314,7 @@ function NavButton({
   return (
     <button
       type="button"
+      aria-expanded={expanded}
       onClick={onClick}
       className={cn(
         'flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium',

@@ -34,8 +34,7 @@ export function smartLetters(before: TeamData, after: TeamData, actor: SmartActo
   const letters: MailLetter[] = []
   for (const item of added) {
     if (moved.has(item.task.id)) continue
-    if (actor.employeeId !== item.employeeId) continue
-    letters.push(createdForEmployee(item), ...createdForManager(item))
+    letters.push(...creationLetters(item, actor))
   }
   for (const item of afterTasks) {
     const prior = beforeById.get(item.task.id)
@@ -88,25 +87,44 @@ function commentText(task: SmartTask) {
   return task.comments.map((comment) => `${comment.text}\n${comment.createdAt}`).join('\n')
 }
 
-function createdForEmployee(item: LocatedTask): MailLetter {
+function creationLetters(item: LocatedTask, actor: SmartActor): MailLetter[] {
   const period = formatPeriod(item.periodId)
-  return {
-    toEmployeeId: item.employeeId,
-    subject: `Вы создали smart-задачу «${item.task.name}»`,
-    text: `Вы создали задачу «${item.task.name}» в матрице за ${period}. Статус: ${SMART_STATUS_LABEL.created}.`,
-  }
-}
-
-function createdForManager(item: LocatedTask): MailLetter[] {
-  if (!item.managerId) return []
-  const period = formatPeriod(item.periodId)
-  return [
-    {
-      toEmployeeId: item.managerId,
-      subject: `Сотрудник создал smart-задачу «${item.task.name}»`,
-      text: `Новая задача «${item.task.name}» сотрудника ${item.employeeName} за ${period}. Статус: ${SMART_STATUS_LABEL.created}.`,
-    },
+  const status = SMART_STATUS_LABEL[item.task.status]
+  const name = item.task.name
+  const self = actor.employeeId === item.employeeId
+  const letters: MailLetter[] = [
+    self
+      ? {
+          toEmployeeId: item.employeeId,
+          subject: `Вы создали smart-задачу «${name}»`,
+          text: `Вы создали задачу «${name}» в матрице за ${period}. Статус: ${status}.`,
+        }
+      : {
+          toEmployeeId: item.employeeId,
+          subject: `Вам создали smart-задачу «${name}»`,
+          text: `В матрице за ${period} вам создана задача «${name}». Статус: ${status}.`,
+        },
   ]
+  const others = new Set<string>()
+  if (item.managerId && item.managerId !== item.employeeId) others.add(item.managerId)
+  if (actor.employeeId && actor.employeeId !== item.employeeId) others.add(actor.employeeId)
+  for (const id of others) {
+    const own = id === actor.employeeId
+    letters.push(
+      own
+        ? {
+            toEmployeeId: id,
+            subject: `Вы создали smart-задачу «${name}» сотруднику ${item.employeeName}`,
+            text: `Вы создали задачу «${name}» сотруднику ${item.employeeName} за ${period}. Статус: ${status}.`,
+          }
+        : {
+            toEmployeeId: id,
+            subject: `Сотруднику ${item.employeeName} создана smart-задача «${name}»`,
+            text: `Сотруднику ${item.employeeName} создана задача «${name}» за ${period}. Статус: ${status}.`,
+          },
+    )
+  }
+  return letters
 }
 
 function statusForManager(item: LocatedTask, from: SmartStatus): MailLetter[] {

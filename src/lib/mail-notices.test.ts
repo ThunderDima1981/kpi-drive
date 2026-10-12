@@ -42,9 +42,11 @@ describe('smart mail', () => {
     expect(letters[1]?.text).toContain('Ирина Соколова')
   })
 
-  it('does not send a creation letter when the manager creates the task', () => {
+  it('tells the employee and the manager when the manager creates the task', () => {
     const letters = smartLetters(team('in_progress', []), team('in_progress'), manager)
-    expect(letters).toEqual([])
+    expect(letters.map((letter) => letter.toEmployeeId)).toEqual(['person', 'boss'])
+    expect(letters[0]?.subject).toContain('Вам создали')
+    expect(letters[1]?.subject).toContain('сотруднику Ирина Соколова')
   })
 
   it('tells the manager about a status change and the employee when the manager closes it', () => {

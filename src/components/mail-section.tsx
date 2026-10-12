@@ -80,7 +80,7 @@ export function MailSection() {
     <section className="rounded-2xl border border-line bg-card p-5 shadow-sm">
       <h2 className="font-semibold">Подключение</h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-        Письмо уходит на почту учётной записи, привязанной к сотруднику. Когда сотрудник создаёт смарт, письмо получают он и его руководитель. При смене статуса письмо получает руководитель. Когда руководитель закрывает смарт, письмо получает сотрудник.
+        Письмо уходит на почту учётной записи, привязанной к сотруднику. Когда появляется smart-задача, письмо получают сотрудник и тот, кто её создал. При смене статуса письмо получает руководитель. Когда руководитель закрывает смарт, письмо получает сотрудник.
       </p>
       {loading ? <p className="mt-4 text-sm text-ink-soft">Загружаем параметры…</p> : null}
       <form onSubmit={(event) => void save(event)} className="mt-4 grid gap-3 sm:grid-cols-2">
