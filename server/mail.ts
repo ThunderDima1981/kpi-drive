@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { smartLetters, type MailLetter } from '../src/lib/mail-notices.ts'
+import { mailPassword, smtpSecurity } from '../src/lib/smtp.ts'
 import type { SmartActor } from '../src/lib/smart-access.ts'
 import type { TeamData } from '../src/types.ts'
 import { pool } from './db.ts'
@@ -68,11 +69,14 @@ export async function deliverSmartMail(ownerId: string, before: TeamData, after:
 }
 
 async function sendMessages(settings: StoredMail, messages: { to: string; subject: string; text: string }[]) {
+  const security = smtpSecurity(settings.port, settings.secure)
+  const password = mailPassword(settings.password)
   const transport = nodemailer.createTransport({
     host: settings.host,
     port: settings.port,
-    secure: settings.secure,
-    auth: settings.username ? { user: settings.username, pass: settings.password } : undefined,
+    secure: security.secure,
+    requireTLS: security.requireTLS,
+    auth: settings.username ? { user: settings.username, pass: password } : undefined,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,

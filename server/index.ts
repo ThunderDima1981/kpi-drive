@@ -8,6 +8,7 @@ import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
 import { emptyTeam, moveSmartTask, parsePeriodId } from '../src/lib/period.ts'
 import { applyEvaluation, evaluationItems, hasEvaluations } from '../src/lib/evaluations.ts'
 import { canMoveSmart, smartChangeError } from '../src/lib/smart-access.ts'
+import { mailErrorText } from '../src/lib/smtp.ts'
 import { deliverSmartMail, loadMailConfig, saveMailConfig, sendTestMail } from './mail.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
@@ -336,7 +337,7 @@ app.post('/api/mail/test', async (c) => {
     await sendTestMail(actor.user.email)
   } catch (error) {
     console.error(error)
-    return c.json({ error: 'Не удалось отправить письмо. Проверьте сервер, порт и пароль.' }, 502)
+    return c.json({ error: mailErrorText(error) }, 502)
   }
   return c.json({ ok: true })
 })

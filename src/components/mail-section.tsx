@@ -137,7 +137,7 @@ export function MailSection() {
             aria-label="Защищённое соединение"
             onCheckedChange={(checked) => setSettings((current) => ({ ...current, secure: checked === true }))}
           />
-          Защищённое соединение TLS
+          Защищённое соединение TLS. Для портов 465 и 587 шифрование выбирается само.
         </label>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
           <Button type="submit" disabled={loading || saving}>
