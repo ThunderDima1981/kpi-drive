@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 
 export function ensureLocalPostgres(databaseUrl: string) {
+  if (process.env.NODE_ENV === 'production') return
   let host = ''
   try {
     host = new URL(databaseUrl).hostname
