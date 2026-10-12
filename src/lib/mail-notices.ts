@@ -104,7 +104,7 @@ function createdForManager(item: LocatedTask): MailLetter[] {
     {
       toEmployeeId: item.managerId,
       subject: `Сотрудник создал smart-задачу «${item.task.name}»`,
-      text: `${item.employeeName} создал задачу «${item.task.name}» за ${period}. Статус: ${SMART_STATUS_LABEL.created}.`,
+      text: `Новая задача «${item.task.name}» сотрудника ${item.employeeName} за ${period}. Статус: ${SMART_STATUS_LABEL.created}.`,
     },
   ]
 }
@@ -126,6 +126,6 @@ function closedForEmployee(item: LocatedTask): MailLetter {
   return {
     toEmployeeId: item.employeeId,
     subject: `Руководитель закрыл smart-задачу «${item.task.name}»`,
-    text: `${item.managerName} закрыл задачу «${item.task.name}» за ${period}. Статус: ${SMART_STATUS_LABEL.closed}.`,
+    text: `Задача «${item.task.name}» за ${period} закрыта руководителем ${item.managerName}. Статус: ${SMART_STATUS_LABEL.closed}.`,
   }
 }
