@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KpiCatalogSection } from './kpi-catalog.tsx'
+import { MailSection } from './mail-section.tsx'
 import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { UsersSection } from './users-section.tsx'
@@ -106,6 +107,7 @@ export function SettingsView({
       ) : null}
 
       {section === 'kpi' ? <KpiCatalogSection /> : null}
+      {section === 'mail' ? <MailSection /> : null}
       {section === 'users' ? (
         <UsersSection
           currentUserId={currentUserId}

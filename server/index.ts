@@ -6,7 +6,9 @@ import { streamSSE } from 'hono/streaming'
 import { publishTeamUpdate, subscribeTeamUpdates } from '../src/lib/team-live.ts'
 import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
 import { emptyTeam, moveSmartTask, parsePeriodId } from '../src/lib/period.ts'
+import { applyEvaluation, evaluationItems, hasEvaluations } from '../src/lib/evaluations.ts'
 import { canMoveSmart, smartChangeError } from '../src/lib/smart-access.ts'
+import { deliverSmartMail, loadMailConfig, saveMailConfig, sendTestMail } from './mail.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
 import { hashPassword, temporaryPassword, verifyPassword } from './password.ts'
@@ -288,6 +290,7 @@ app.put('/api/team', async (c) => {
     if (statusError) return c.json({ error: statusError }, 403)
     await saveTeamDocument(user.id, body)
     publishTeamUpdate(user.id, clientOrigin(c))
+    void deliverSmartMail(user.id, stored, body, actor).catch((error) => console.error(error))
     return c.json(body)
   }
   if (!user.teamOwnerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
@@ -300,8 +303,91 @@ app.put('/api/team', async (c) => {
   if (JSON.stringify(merged.saved).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
   await saveTeamDocument(user.teamOwnerId, merged.saved)
   publishTeamUpdate(user.teamOwnerId, clientOrigin(c))
+  void deliverSmartMail(user.teamOwnerId, stored, merged.saved, actor).catch((error) => console.error(error))
   return c.json(merged.view)
 })
+
+app.get('/api/mail', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  return c.json(await loadMailConfig())
+})
+
+app.put('/api/mail', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  const body = await readJson(c)
+  const host = textField(body?.host, 200)
+  const username = textField(body?.username, 200)
+  const from = textField(body?.from, 200)
+  const password = typeof body?.password === 'string' ? body.password : ''
+  const port = typeof body?.port === 'number' ? body.port : Number(body?.port)
+  if (host === null || username === null || from === null) return c.json({ error: 'Проверьте поля почтового сервера.' }, 400)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return c.json({ error: 'Укажите порт от 1 до 65535.' }, 400)
+  if (from && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from)) return c.json({ error: 'Укажите адрес отправителя.' }, 400)
+  if (password.length > 200) return c.json({ error: 'Пароль почты слишком длинный.' }, 400)
+  return c.json(await saveMailConfig({ host, port, secure: body?.secure === true, username, password, from }))
+})
+
+app.post('/api/mail/test', async (c) => {
+  const actor = await requireAdmin(c)
+  if (!actor.user) return c.json({ error: actor.error }, actor.status)
+  try {
+    await sendTestMail(actor.user.email)
+  } catch (error) {
+    console.error(error)
+    return c.json({ error: 'Не удалось отправить письмо. Проверьте сервер, порт и пароль.' }, 502)
+  }
+  return c.json({ ok: true })
+})
+
+app.get('/api/evaluations', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  const team = ownerId ? await loadTeamDocument(ownerId) : null
+  if (!team) return c.json({ assigned: false, period: '', items: [] })
+  const requested = c.req.query('period') ?? ''
+  const period = /^\d{4}-\d{2}$/.test(requested) ? requested : team.currentPeriod
+  return c.json({
+    assigned: hasEvaluations(team, user.employeeId),
+    period,
+    items: evaluationItems(team, user.employeeId, period),
+  })
+})
+
+app.post('/api/evaluations', async (c) => {
+  const user = await currentUser(c)
+  if (!user) return c.json({ error: 'Нужно войти.' }, 401)
+  const body = await readJson(c)
+  const periodId = typeof body?.periodId === 'string' ? body.periodId : ''
+  const employeeId = typeof body?.employeeId === 'string' ? body.employeeId : ''
+  const indicatorId = typeof body?.indicatorId === 'string' ? body.indicatorId : ''
+  const score = typeof body?.score === 'number' ? body.score : Number(body?.score)
+  if (!/^\d{4}-\d{2}$/.test(periodId) || !employeeId || employeeId.length > 80 || !indicatorId || indicatorId.length > 80) {
+    return c.json({ error: 'Некорректный запрос.' }, 400)
+  }
+  if (!Number.isFinite(score)) return c.json({ error: 'Такой оценки нет на шкале.' }, 400)
+  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const stored = await loadTeamDocument(ownerId)
+  if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
+  const applied = applyEvaluation(stored, user.employeeId, periodId, employeeId, indicatorId, score)
+  if ('error' in applied) return c.json({ error: applied.error }, 400)
+  await saveTeamDocument(ownerId, applied.team)
+  publishTeamUpdate(ownerId, clientOrigin(c))
+  const item = evaluationItems(applied.team, user.employeeId, periodId).find(
+    (row) => row.employeeId === employeeId && row.indicatorId === indicatorId,
+  )
+  return c.json({ item })
+})
+
+function textField(value: unknown, max: number) {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  if (text.length > max) return null
+  return text
+}
 
 function clientOrigin(c: { req: { header: (name: string) => string | undefined } }) {
   const value = c.req.header('x-client-id') ?? ''
@@ -435,18 +521,7 @@ function emailOf(body: { email?: unknown } | null) {
 async function readJson(c: { req: { json: () => Promise<unknown> } }) {
   try {
     const body = await c.req.json()
-    return body && typeof body === 'object'
-      ? (body as {
-          email?: unknown
-          name?: unknown
-          password?: unknown
-          role?: unknown
-          employeeId?: unknown
-          matrixIds?: unknown
-          taskId?: unknown
-          periodId?: unknown
-        })
-      : null
+    return body && typeof body === 'object' ? (body as Record<string, unknown>) : null
   } catch {
     return null
   }

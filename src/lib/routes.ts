@@ -17,6 +17,12 @@ export const SETTINGS_SECTIONS = [
     title: 'Права пользователей',
     description: 'Учётные записи, пароли и матрицы, которые видит пользователь.',
   },
+  {
+    id: 'mail',
+    label: 'Почта',
+    title: 'Почтовый сервер',
+    description: 'Параметры SMTP для писем о smart-задачах.',
+  },
 ] as const
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
@@ -24,6 +30,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
 export type Route =
   | { name: 'dashboard' }
   | { name: 'matrix'; employeeId: string }
+  | { name: 'evaluations' }
   | { name: 'settings'; section: SettingsSection }
 
 export function settingsSection(id: string | undefined): SettingsSection {
@@ -33,6 +40,7 @@ export function settingsSection(id: string | undefined): SettingsSection {
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, '').split('?')[0]?.replace(/\/$/, '') || '/'
   const path = raw.startsWith('/') ? raw : `/${raw}`
+  if (path === '/evaluations') return { name: 'evaluations' }
   if (path === '/settings') return { name: 'settings', section: 'team' }
   const settings = /^\/settings\/([^/]+)$/.exec(path)
   if (settings) return { name: 'settings', section: settingsSection(settings[1]) }
@@ -42,6 +50,7 @@ export function parseHash(hash: string): Route {
 }
 
 export function hrefFor(route: Route) {
+  if (route.name === 'evaluations') return '#/evaluations'
   if (route.name === 'settings') return `#/settings/${route.section}`
   if (route.name === 'matrix') return `#/employee/${encodeURIComponent(route.employeeId)}`
   return '#/'

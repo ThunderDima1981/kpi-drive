@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LayoutDashboard, Menu, Settings, X } from 'lucide-react'
+import { ClipboardCheck, LayoutDashboard, Menu, Settings, X } from 'lucide-react'
 import { PeriodCalendar } from './period-calendar.tsx'
 import { cn } from '@/lib/utils'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
@@ -7,8 +7,10 @@ import { useOrgList } from './use-org-list.ts'
 import type { OrgNode } from '../lib/org.ts'
 import { SETTINGS_SECTIONS, type Route } from '../lib/routes.ts'
 import type { User } from '../lib/session.ts'
+import { api } from '../lib/api.ts'
+import { hasEvaluations } from '../lib/evaluations.ts'
 import { useIsAdmin } from '../lib/role.tsx'
-import { useSaveStatus } from '../lib/sync.ts'
+import { onTeamRefreshed, useSaveStatus } from '../lib/sync.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
 export function Shell({
@@ -84,8 +86,30 @@ function Sidebar({
   const selectPeriod = useTeamStore((state) => state.selectPeriod)
   const saveStatus = useSaveStatus()
   const admin = useIsAdmin()
+  const periods = useTeamStore((state) => state.periods)
   const [periodOpen, setPeriodOpen] = useState(false)
+  const [remoteEvaluations, setRemoteEvaluations] = useState(false)
   const org = useOrgList(employees)
+  const evaluatesOthers =
+    remoteEvaluations ||
+    hasEvaluations({ periods, currentPeriod, periodLabel, employees, kpiCatalog: [] }, user.employeeId)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      void api<{ assigned: boolean }>('/api/evaluations')
+        .then((result) => {
+          if (!cancelled) setRemoteEvaluations(result.assigned)
+        })
+        .catch(() => undefined)
+    }
+    load()
+    const unsubscribe = onTeamRefreshed(load)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [user.id])
 
   return (
     <div className="flex h-full flex-col bg-ink text-[#f6f3ec]">
@@ -107,6 +131,14 @@ function Sidebar({
           icon={<LayoutDashboard className="size-4" />}
           label="Дашборд"
         />
+        {evaluatesOthers ? (
+          <NavButton
+            active={route.name === 'evaluations'}
+            onClick={() => onNavigate({ name: 'evaluations' })}
+            icon={<ClipboardCheck className="size-4" />}
+            label="Заполнить оценки"
+          />
+        ) : null}
         {admin ? (
           <div className="grid gap-0.5">
             <NavButton

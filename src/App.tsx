@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AuthScreen } from './components/auth-screen.tsx'
 import { Dashboard } from './components/dashboard.tsx'
 import { MatrixView } from './components/matrix-view.tsx'
+import { EvaluationsView } from './components/evaluations-view.tsx'
 import { SettingsView } from './components/settings-view.tsx'
 import { Shell } from './components/shell.tsx'
 import { ApiError, api } from './lib/api.ts'
@@ -44,6 +45,7 @@ export default function App() {
       document.title = `${section?.title ?? 'Настройки'} — KPI-Drive`
     }
     else if (route.name === 'matrix') document.title = 'Матрица КР — KPI-Drive'
+    else if (route.name === 'evaluations') document.title = 'Заполнить оценки — KPI-Drive'
     else document.title = 'Результативность команды — KPI-Drive'
   }, [route, session.status])
 
@@ -131,6 +133,7 @@ export default function App() {
       {route.name === 'matrix' ? (
         <MatrixView employeeId={route.employeeId} onBack={() => navigate({ name: 'dashboard' })} />
       ) : null}
+      {route.name === 'evaluations' ? <EvaluationsView /> : null}
       {route.name === 'settings' && session.user.role === 'admin' ? (
         <SettingsView
           section={route.section}

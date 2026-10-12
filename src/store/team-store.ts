@@ -28,6 +28,7 @@ interface TeamState extends TeamData {
   setStatus: (employeeId: string, taskId: string, status: SmartStatus) => void
   addComment: (employeeId: string, taskId: string, comment: SmartComment) => void
   setScore: (employeeId: string, indicatorId: string, score: number) => void
+  setPeriodScore: (periodId: string, employeeId: string, indicatorId: string, score: number) => void
   setEvaluator: (employeeId: string, indicatorId: string, evaluatorId: string | null) => void
 }
 
@@ -493,6 +494,21 @@ export const useTeamStore = create<TeamState>()((set) => ({
             ),
           })),
         ),
+      setPeriodScore: (periodId, employeeId, indicatorId, score) =>
+        set((state) => {
+          if (!state.periods.some((period) => period.id === periodId)) return state
+          const periods = state.periods.map((period) =>
+            period.id === periodId
+              ? {
+                  ...period,
+                  employees: mapIndicator(period.employees, employeeId, indicatorId, (indicator) =>
+                    indicator.type === 'standard' ? { ...indicator, score } : indicator,
+                  ),
+                }
+              : period,
+          )
+          return publishPeriods(periods, state.currentPeriod)
+        }),
       setEvaluator: (employeeId, indicatorId, evaluatorId) =>
         set((state) => {
           if (evaluatorId !== null && !state.employees.some((employee) => employee.id === evaluatorId)) return state

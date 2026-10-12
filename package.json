@@ -23,6 +23,7 @@
     "exceljs": "^4.4.0",
     "hono": "^4.13.13",
     "lucide-react": "^1.53.0",
+    "nodemailer": "^10.1.0",
     "pg": "^8.23.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

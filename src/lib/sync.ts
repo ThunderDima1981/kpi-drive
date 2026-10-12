@@ -18,6 +18,16 @@ let refreshQueued = false
 let status: SaveStatus = 'idle'
 let events: EventSource | null = null
 const listeners = new Set<() => void>()
+const refreshListeners = new Set<() => void>()
+
+export function onTeamRefreshed(listener: () => void) {
+  refreshListeners.add(listener)
+  return () => refreshListeners.delete(listener)
+}
+
+function notifyTeamRefreshed() {
+  for (const listener of refreshListeners) listener()
+}
 
 function setStatus(next: SaveStatus) {
   status = next
@@ -125,6 +135,7 @@ export async function loadTeam() {
   useTeamStore.getState().replaceTeam(data)
   setStatus('saved')
   enableTeamSync(true)
+  notifyTeamRefreshed()
 }
 
 export async function flushTeamSync() {

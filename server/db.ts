@@ -31,6 +31,17 @@ export async function migrate() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id text;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS matrix_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS team_owner_id uuid;
+
+    CREATE TABLE IF NOT EXISTS mail_settings (
+      id int PRIMARY KEY,
+      host text NOT NULL DEFAULT '',
+      port int NOT NULL DEFAULT 587,
+      secure boolean NOT NULL DEFAULT false,
+      username text NOT NULL DEFAULT '',
+      password text NOT NULL DEFAULT '',
+      from_address text NOT NULL DEFAULT ''
+    );
+    INSERT INTO mail_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
   `)
   await pool.query(`
     DO $$ BEGIN
