@@ -39,12 +39,17 @@ app.post('/api/auth/register', async (c) => {
   if (password.length > 72) return c.json({ error: 'Пароль слишком длинный.' }, 400)
   const id = crypto.randomUUID()
   const passwordHash = await hashPassword(password)
+  const admins = await pool.query<{ exists: boolean }>('SELECT EXISTS (SELECT 1 FROM users WHERE role = $1) AS exists', [
+    'admin',
+  ])
+  const role = admins.rows[0]?.exists ? 'user' : 'admin'
   try {
-    await pool.query('INSERT INTO users (id, email, name, password_hash) VALUES ($1, $2, $3, $4)', [
+    await pool.query('INSERT INTO users (id, email, name, password_hash, role) VALUES ($1, $2, $3, $4, $5)', [
       id,
       email,
       name,
       passwordHash,
+      role,
     ])
   } catch (error) {
     if (isUniqueViolation(error)) return c.json({ error: 'Такая почта уже зарегистрирована.' }, 409)
@@ -52,7 +57,7 @@ app.post('/api/auth/register', async (c) => {
   }
   await pool.query('INSERT INTO teams (user_id, document) VALUES ($1, $2::jsonb)', [id, JSON.stringify(emptyTeam())])
   await startSession(c, id)
-  return c.json({ user: { id, email, name, role: 'admin' as const, employeeId: null, matrixIds: [] } })
+  return c.json({ user: { id, email, name, role, employeeId: null, matrixIds: [] } })
 })
 
 app.post('/api/auth/login', async (c) => {
@@ -99,7 +104,7 @@ app.post('/api/users', async (c) => {
   const email = emailOf(body)
   const name = nameOf(body?.name)
   const passwordIssue = passwordIssueOf(body?.password)
-  const role = body && 'role' in body && body.role != null ? body.role : 'admin'
+  const role = body && 'role' in body && body.role != null ? body.role : 'user'
   if (!email) return c.json({ error: 'Укажите почту.' }, 400)
   if (!name) return c.json({ error: 'Укажите имя.' }, 400)
   if (passwordIssue) return c.json({ error: passwordIssue }, 400)

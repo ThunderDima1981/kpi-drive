@@ -126,7 +126,7 @@ function Sidebar({
         </svg>
         <div>
           <p className="text-sm font-semibold tracking-wide">KPI-Drive</p>
-          <p className="text-xs text-white/55">Матрица Литягина</p>
+          <p className="text-xs text-white/55">Коэффициент результативности</p>
         </div>
       </div>
       <nav className="grid gap-1 px-3">

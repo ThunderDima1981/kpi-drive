@@ -86,7 +86,7 @@ export function SettingsView({
       <section className="rounded-2xl border border-line bg-card shadow-sm">
         <div className="flex flex-col gap-3 px-5 pt-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="font-semibold">Состав</h2>
+            <h2 className="font-semibold">Сотрудники</h2>
             <p className="mt-1 text-sm text-ink-soft">Руководитель задаёт ветку. «+» раскрывает подчинённых.</p>
           </div>
           <div className="w-full sm:max-w-xs">

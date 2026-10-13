@@ -307,7 +307,7 @@ function AddUserForm({
         <Field label="Пароль" name="password" type="password" autoComplete="new-password" />
         <Label className="grid gap-1.5">
           <span>Права</span>
-          <select name="role" aria-label="Права нового пользователя" defaultValue="admin" className="h-8 rounded-lg border border-input bg-white px-2 text-sm">
+          <select name="role" aria-label="Права нового пользователя" defaultValue="user" className="h-8 rounded-lg border border-input bg-white px-2 text-sm">
             <option value="admin">Администратор</option>
             <option value="user">Пользователь</option>
           </select>

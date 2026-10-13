@@ -26,7 +26,8 @@ export async function migrate() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'admin';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
+    ALTER TABLE users ALTER COLUMN role SET DEFAULT 'user';
     UPDATE users SET role = 'admin' WHERE role IS NULL OR role NOT IN ('admin', 'user');
     ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id text;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS matrix_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
