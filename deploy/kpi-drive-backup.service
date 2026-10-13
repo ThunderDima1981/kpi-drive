@@ -1,0 +1,10 @@
+[Unit]
+Description=KPI-Drive database backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+Environment=APP_DIR=/opt/kpi-drive
+Environment=BACKUP_DIR=/var/backups/kpi-drive
+Environment=KEEP=5
+ExecStart=/usr/bin/env bash /opt/kpi-drive/deploy/backup.sh
