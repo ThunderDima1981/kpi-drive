@@ -7,4 +7,5 @@ export interface User {
   role: Role
   employeeId: string | null
   matrixIds: string[]
+  locked?: boolean
 }

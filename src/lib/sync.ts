@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { api } from './api.ts'
+import { ApiError, apiResponse } from './api.ts'
 import { randomId } from './id.ts'
 import { emptyTeam } from './period.ts'
 import { useTeamStore } from '../store/team-store.ts'
@@ -18,7 +18,39 @@ let refreshing = false
 let refreshQueued = false
 let status: SaveStatus = 'idle'
 let events: EventSource | null = null
+let revision = 0
+let generation = 0
+let queuedSaves = 0
+let notice = ''
 const listeners = new Set<() => void>()
+const noticeListeners = new Set<() => void>()
+
+const REVISION_HEADER = 'x-team-revision'
+
+function rememberRevision(headers: Headers) {
+  const value = Number(headers.get(REVISION_HEADER))
+  if (Number.isInteger(value) && value >= 0) revision = value
+}
+
+function setNotice(next: string) {
+  notice = next
+  for (const listener of noticeListeners) listener()
+}
+
+export function dismissSyncNotice() {
+  setNotice('')
+}
+
+export function useSyncNotice() {
+  return useSyncExternalStore(
+    (listener) => {
+      noticeListeners.add(listener)
+      return () => noticeListeners.delete(listener)
+    },
+    () => notice,
+    () => '',
+  )
+}
 const refreshListeners = new Set<() => void>()
 
 export function onTeamRefreshed(listener: () => void) {
@@ -74,23 +106,47 @@ let savePromise: Promise<void> = Promise.resolve()
 
 function saveTeam(snapshot: TeamData) {
   saving = true
-  const run = (async () => {
+  queuedSaves += 1
+  const queuedIn = generation
+  const run = savePromise.then(async () => {
     try {
-      await api('/api/team', {
+      if (queuedIn !== generation) return
+      const { headers } = await apiResponse('/api/team', {
         method: 'PUT',
         body: JSON.stringify(snapshot),
-        headers: { 'x-client-id': clientId },
+        headers: { 'x-client-id': clientId, [REVISION_HEADER]: String(revision) },
       })
-      setStatus('saved')
-    } catch {
+      rememberRevision(headers)
+      setStatus(timer || pending || queuedSaves > 1 ? 'saving' : 'saved')
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        await recoverFromConflict(reason.message)
+        return
+      }
       setStatus('error')
     } finally {
-      saving = false
-      if (refreshQueued) void refreshFromPeer()
+      queuedSaves -= 1
+      saving = queuedSaves > 0
+      if (!saving && refreshQueued) void refreshFromPeer()
     }
-  })()
+  })
   savePromise = run
   return run
+}
+
+async function recoverFromConflict(message: string) {
+  generation += 1
+  if (timer) {
+    clearTimeout(timer)
+    timer = null
+  }
+  pending = null
+  setNotice(message)
+  try {
+    await loadTeam()
+  } catch {
+    setStatus('error')
+  }
 }
 
 export function refreshFromPeer() {
@@ -132,7 +188,8 @@ export function stopTeamEvents() {
 
 export async function loadTeam() {
   enableTeamSync(false)
-  const data = await api<unknown>('/api/team')
+  const { data, headers } = await apiResponse<unknown>('/api/team')
+  rememberRevision(headers)
   useTeamStore.getState().replaceTeam(data)
   setStatus('saved')
   enableTeamSync(true)
@@ -153,11 +210,12 @@ export async function flushTeamSync() {
 export async function moveSmartToNextMonth(employeeId: string, taskId: string) {
   const periodId = useTeamStore.getState().currentPeriod
   await flushTeamSync()
-  const data = await api<unknown>('/api/smart-tasks/move', {
+  const { data, headers } = await apiResponse<unknown>('/api/smart-tasks/move', {
     method: 'POST',
     body: JSON.stringify({ employeeId, taskId, periodId }),
     headers: { 'x-client-id': clientId },
   })
+  rememberRevision(headers)
   enableTeamSync(false)
   if (timer) {
     clearTimeout(timer)
@@ -177,6 +235,9 @@ export function clearTeamLocal() {
   }
   pending = null
   refreshQueued = false
+  generation += 1
+  revision = 0
+  setNotice('')
   stopTeamEvents()
   useTeamStore.getState().replaceTeam(emptyTeam())
   setStatus('idle')

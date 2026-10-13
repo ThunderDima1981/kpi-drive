@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ExcelButtons } from './excel-buttons.tsx'
-import { Checkbox } from '@/components/ui/checkbox'
+import { InvitationsPanel } from './invitations-panel.tsx'
+import { AccessFields, Field, type TeamEmployee } from './user-fields.tsx'
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ export function UsersSection({
   const [users, setUsers] = useState<User[]>([])
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
+  const [inviting, setInviting] = useState(false)
   const [editing, setEditing] = useState<User | null>(null)
   const [passwordFor, setPasswordFor] = useState<User | null>(null)
   const [resetFor, setResetFor] = useState<User | null>(null)
@@ -135,7 +137,8 @@ export function UsersSection({
           <h2 className="font-semibold">Права пользователей</h2>
           <p className="mt-1 max-w-xl text-sm text-ink-soft">
             Свяжите учётную запись с сотрудником и отметьте матрицы, которые она видит. Администратор видит всю команду.
-            Пользователь в открытых матрицах создаёт smart-задачи и ставит статус «Выполнено».
+            Пользователь в открытых матрицах создаёт smart-задачи и ставит статус «Выполнено». Регистрация закрыта:
+            новые люди входят по приглашению.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -146,8 +149,25 @@ export function UsersSection({
             onTemplate={() => void downloadWorkbook('polzovateli.xlsx', userTemplate()).catch(() => setImportMessage('Не удалось подготовить шаблон.'))}
             onFile={(file) => void importUsers(file)}
           />
-          <Button type="button" variant={adding ? 'outline' : 'default'} onClick={() => setAdding((open) => !open)}>
-            {adding ? 'Закрыть форму' : 'Добавить пользователя'}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setAdding((open) => !open)
+              setInviting(false)
+            }}
+          >
+            {adding ? 'Закрыть форму' : 'Добавить с паролем'}
+          </Button>
+          <Button
+            type="button"
+            variant={inviting ? 'outline' : 'default'}
+            onClick={() => {
+              setInviting((open) => !open)
+              setAdding(false)
+            }}
+          >
+            {inviting ? 'Закрыть приглашение' : 'Пригласить'}
           </Button>
         </div>
       </div>
@@ -169,6 +189,8 @@ export function UsersSection({
         />
       ) : null}
 
+      <InvitationsPanel employees={employees} inviting={inviting} onCloseForm={() => setInviting(false)} />
+
       {users.length === 0 ? <p className="mt-4 text-sm text-ink-soft">Пользователей пока нет.</p> : null}
       <ul className="mt-4 grid gap-3">
         {users.map((user) => (
@@ -179,7 +201,14 @@ export function UsersSection({
                 {user.id === currentUserId ? <span className="ml-2 text-xs font-normal text-ink-soft">это вы</span> : null}
               </p>
               <p className="text-sm text-ink-soft">{user.email}</p>
-              <p className="mt-1 text-sm">{ROLE_LABEL[user.role]}</p>
+              <p className="mt-1 text-sm">
+                {ROLE_LABEL[user.role]}
+                {user.locked ? (
+                  <span className="ml-2 rounded-md bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                    вход заблокирован на 15 минут — задайте или сбросьте пароль, чтобы снять блокировку
+                  </span>
+                ) : null}
+              </p>
               <AccessSummary user={user} employees={employees} onOpenEmployee={onOpenEmployee} />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -606,7 +635,6 @@ function DeleteUserDialog({
   )
 }
 
-type TeamEmployee = { id: string; name: string; position: string }
 
 function AccessSummary({
   user,
@@ -649,105 +677,5 @@ function AccessSummary({
         )}
       </p>
     </div>
-  )
-}
-
-function AccessFields({
-  employees,
-  employeeId,
-  matrixIds,
-  onEmployeeId,
-  onMatrixIds,
-}: {
-  employees: TeamEmployee[]
-  employeeId: string
-  matrixIds: string[]
-  onEmployeeId: (id: string) => void
-  onMatrixIds: (ids: string[]) => void
-}) {
-  const people = employees.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-  const known = new Set(people.map((employee) => employee.id))
-  const missing = matrixIds.filter((id) => !known.has(id))
-
-  function toggle(id: string, checked: boolean) {
-    onMatrixIds(checked ? [...matrixIds, id] : matrixIds.filter((item) => item !== id))
-  }
-
-  return (
-    <div className="grid gap-3">
-      <Label className="grid gap-1.5">
-        <span>Сотрудник</span>
-        <select
-          aria-label="Сотрудник учётной записи"
-          value={employeeId}
-          onChange={(event) => {
-            const next = event.target.value
-            onEmployeeId(next)
-            if (next && !matrixIds.includes(next)) onMatrixIds([...matrixIds, next])
-          }}
-          className="h-8 rounded-lg border border-input bg-white px-2 text-sm"
-        >
-          <option value="">Не выбран</option>
-          {people.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.name} · {employee.position}
-            </option>
-          ))}
-          {employeeId && !known.has(employeeId) ? <option value={employeeId}>Сотрудник не найден</option> : null}
-        </select>
-      </Label>
-      <fieldset className="grid gap-2">
-        <legend className="text-sm font-medium">Матрицы</legend>
-        <p className="text-xs text-ink-soft">Пользователь открывает только отмеченные матрицы.</p>
-        {people.length === 0 && missing.length === 0 ? (
-          <p className="text-sm text-ink-soft">В этом месяце пока нет сотрудников.</p>
-        ) : (
-          <ul className="grid max-h-48 gap-2 overflow-y-auto">
-            {people.map((employee) => (
-              <li key={employee.id}>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={matrixIds.includes(employee.id)}
-                    aria-label={`Матрица: ${employee.name}`}
-                    onCheckedChange={(checked) => toggle(employee.id, checked === true)}
-                  />
-                  <span>{employee.name}</span>
-                  <span className="text-ink-soft">{employee.position}</span>
-                </label>
-              </li>
-            ))}
-            {missing.map((id) => (
-              <li key={id}>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked aria-label="Матрица удалённого сотрудника" onCheckedChange={(checked) => toggle(id, checked === true)} />
-                  <span className="text-ink-soft">Сотрудник не найден</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-      </fieldset>
-    </div>
-  )
-}
-
-function Field({
-  label,
-  name,
-  type = 'text',
-  defaultValue,
-  autoComplete,
-}: {
-  label: string
-  name: string
-  type?: string
-  defaultValue?: string
-  autoComplete?: string
-}) {
-  return (
-    <Label className="grid gap-1.5">
-      <span>{label}</span>
-      <Input name={name} type={type} defaultValue={defaultValue} autoComplete={autoComplete} aria-label={label} />
-    </Label>
   )
 }

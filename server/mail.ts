@@ -1,3 +1,4 @@
+import { appendFile } from 'node:fs/promises'
 import nodemailer from 'nodemailer'
 import { smartLetters, type MailLetter } from '../src/lib/mail-notices.ts'
 import { mailPassword, smtpSecurity } from '../src/lib/smtp.ts'
@@ -53,6 +54,11 @@ export async function sendTestMail(to: string) {
   await sendLetter(to, 'Проверочное письмо KPI-Drive', 'Подключение к почтовому серверу работает.')
 }
 
+export async function mailReady() {
+  const settings = await readMail()
+  return Boolean(settings.host && settings.from)
+}
+
 export async function sendLetter(to: string, subject: string, text: string) {
   const settings = await readMail()
   if (!settings.host || !settings.from) throw new Error('Укажите сервер и адрес отправителя.')
@@ -78,6 +84,11 @@ export async function deliverSmartMail(
 }
 
 async function sendMessages(settings: StoredMail, messages: { to: string; subject: string; text: string }[]) {
+  const capture = process.env.MAIL_CAPTURE_FILE
+  if (capture) {
+    await appendFile(capture, messages.map((message) => JSON.stringify(message)).join('\n') + '\n')
+    return
+  }
   const security = smtpSecurity(settings.port, settings.secure)
   const password = mailPassword(settings.password)
   const transport = nodemailer.createTransport({

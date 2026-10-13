@@ -6,6 +6,7 @@ import { EvaluationsView } from './components/evaluations-view.tsx'
 import { SettingsView } from './components/settings-view.tsx'
 import { Shell } from './components/shell.tsx'
 import { ApiError, api } from './lib/api.ts'
+import { readAuthLink } from './lib/auth-link.ts'
 import { hrefFor, parseHash, SETTINGS_SECTIONS, type Route } from './lib/routes.ts'
 import type { User } from './lib/session.ts'
 import { RoleProvider } from './lib/role.tsx'
@@ -18,7 +19,9 @@ type Session =
   | { status: 'in'; user: User }
 
 export default function App() {
-  const [session, setSession] = useState<Session>({ status: 'loading' })
+  const [session, setSession] = useState<Session>(() =>
+    readAuthLink(window.location.search) ? { status: 'out' } : { status: 'loading' },
+  )
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))
 
   useEffect(() => {
@@ -52,6 +55,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     startTeamSync()
+    if (readAuthLink(window.location.search)) return
     void (async () => {
       try {
         const me = await api<{ user: User }>('/api/auth/me')

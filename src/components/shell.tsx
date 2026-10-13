@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ClipboardCheck, LayoutDashboard, Menu, Settings, X } from 'lucide-react'
+import { ClipboardCheck, LayoutDashboard, Menu, Settings, TriangleAlert, X } from 'lucide-react'
 import { PeriodCalendar } from './period-calendar.tsx'
 import { cn } from '@/lib/utils'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
@@ -10,7 +10,7 @@ import type { User } from '../lib/session.ts'
 import { api } from '../lib/api.ts'
 import { hasEvaluations } from '../lib/evaluations.ts'
 import { useIsAdmin } from '../lib/role.tsx'
-import { onTeamRefreshed, useSaveStatus } from '../lib/sync.ts'
+import { dismissSyncNotice, onTeamRefreshed, useSaveStatus, useSyncNotice } from '../lib/sync.ts'
 import { useTeamStore } from '../store/team-store.ts'
 
 export function Shell({
@@ -27,6 +27,7 @@ export function Shell({
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const notice = useSyncNotice()
 
   useEffect(() => {
     if (!open) return
@@ -63,7 +64,26 @@ export function Shell({
           <p className="text-sm font-semibold">KPI-Drive</p>
           <span className="size-10" />
         </header>
-        <main className="px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="px-4 py-6 md:px-8 md:py-8">
+          {notice ? (
+            <div
+              role="alert"
+              className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            >
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+              <p className="flex-1 leading-relaxed">{notice}</p>
+              <button
+                type="button"
+                aria-label="Скрыть предупреждение"
+                className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-amber-100"
+                onClick={dismissSyncNotice}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ) : null}
+          {children}
+        </main>
       </div>
     </div>
   )

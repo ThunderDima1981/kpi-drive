@@ -21,7 +21,13 @@ export const SETTINGS_SECTIONS = [
     id: 'mail',
     label: 'Почта',
     title: 'Почтовый сервер',
-    description: 'Параметры SMTP для писем о smart-задачах.',
+    description: 'Параметры SMTP для писем о smart-задачах, приглашений и восстановления пароля.',
+  },
+  {
+    id: 'log',
+    label: 'Журнал',
+    title: 'Журнал изменений',
+    description: 'Кто и когда менял матрицы, показатели, пользователей и настройки.',
   },
 ] as const
 

@@ -7,6 +7,7 @@ describe('routes', () => {
     expect(parseHash('#/settings/kpi')).toEqual({ name: 'settings', section: 'kpi' })
     expect(parseHash('#/settings/users')).toEqual({ name: 'settings', section: 'users' })
     expect(parseHash('#/settings/mail')).toEqual({ name: 'settings', section: 'mail' })
+    expect(parseHash('#/settings/log')).toEqual({ name: 'settings', section: 'log' })
     expect(parseHash('#/settings/unknown')).toEqual({ name: 'settings', section: 'team' })
     expect(parseHash('#/evaluations')).toEqual({ name: 'evaluations' })
     expect(hrefFor({ name: 'settings', section: 'users' })).toBe('#/settings/users')
