@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react'
 import { api } from './api.ts'
+import { randomId } from './id.ts'
 import { emptyTeam } from './period.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { TeamData } from '../types.ts'
 
-const clientId = crypto.randomUUID()
+const clientId = randomId()
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 

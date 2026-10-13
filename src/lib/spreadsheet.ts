@@ -1,4 +1,5 @@
 import type { Role } from './access.ts'
+import { randomId } from './id.ts'
 import type { KpiPoint } from '../types.ts'
 
 export const USER_COLUMNS = ['Имя', 'Почта', 'Пароль', 'Права', 'Сотрудник', 'Матрицы'] as const
@@ -118,9 +119,9 @@ export function kpiScale(plan: number): { points: KpiPoint[] } | { error: string
   if (max === plan || max === threshold) return { error: 'Не удалось построить шкалу для этого плана.' }
   return {
     points: [
-      { id: crypto.randomUUID(), value: threshold, completion: 0 },
-      { id: crypto.randomUUID(), value: plan, completion: 100 },
-      { id: crypto.randomUUID(), value: max, completion: 130 },
+      { id: randomId(), value: threshold, completion: 0 },
+      { id: randomId(), value: plan, completion: 100 },
+      { id: randomId(), value: max, completion: 130 },
     ],
   }
 }

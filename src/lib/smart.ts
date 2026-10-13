@@ -1,3 +1,4 @@
+import { randomId } from './id.ts'
 import type { Indicator, ScalePoint, SmartComment, SmartIndicator, SmartStatus, SmartTask } from '../types.ts'
 
 export const SMART_STATUSES: SmartStatus[] = ['created', 'in_progress', 'done', 'closed']
@@ -76,7 +77,7 @@ function normalizeSmart(raw: SmartIndicator): SmartIndicator {
     comments?: unknown
     tasks?: unknown
   }
-  const id = typeof legacy.id === 'string' && legacy.id ? legacy.id : crypto.randomUUID()
+  const id = typeof legacy.id === 'string' && legacy.id ? legacy.id : randomId()
   if (Array.isArray(legacy.tasks)) {
     return {
       id,
@@ -116,7 +117,7 @@ function normalizeSmartPoints(value: unknown): ScalePoint[] {
     if (!Number.isFinite(point.score) || !Number.isFinite(point.completion)) return []
     return [
       {
-        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        id: typeof point.id === 'string' && point.id ? point.id : randomId(),
         score: point.score as number,
         completion: point.completion as number,
       },
@@ -129,7 +130,7 @@ function normalizeTask(raw: unknown): SmartTask | null {
   if (!raw || typeof raw !== 'object') return null
   const task = raw as Partial<SmartTask> & { progress?: unknown }
   return {
-    id: typeof task.id === 'string' && task.id ? task.id : crypto.randomUUID(),
+    id: typeof task.id === 'string' && task.id ? task.id : randomId(),
     name: typeof task.name === 'string' ? task.name : '',
     weight: finite(task.weight),
     detail: typeof task.detail === 'string' ? task.detail : '',
@@ -158,7 +159,7 @@ function normalizeComments(value: unknown): SmartComment[] {
     if (typeof comment.text !== 'string' || comment.text.trim() === '') return []
     return [
       {
-        id: typeof comment.id === 'string' && comment.id ? comment.id : crypto.randomUUID(),
+        id: typeof comment.id === 'string' && comment.id ? comment.id : randomId(),
         text: comment.text.trim(),
         createdAt: typeof comment.createdAt === 'string' ? comment.createdAt : new Date().toISOString(),
       },

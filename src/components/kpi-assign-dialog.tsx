@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { defaultKpiPoints, findCatalogKpi, fitsMatrixWeight, kpiCompletionOf, planPoint } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { formatNumber, formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { KpiIndicator } from '../types.ts'
@@ -75,7 +76,7 @@ export function KpiAssignDialog({
         setError('Введите название показателя.')
         return
       }
-      const id = crypto.randomUUID()
+      const id = randomId()
       addCatalogKpi({ id, name: nextName, unit: unit.trim(), fact: 0, points: defaultKpiPoints(id) })
       assignKpi(employeeId, id, parsed)
       close()

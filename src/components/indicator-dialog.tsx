@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { defaultStandardPoints, fitsMatrixWeight } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { useActor } from '../lib/role.tsx'
 import { canChangeStatus, newSmartStatus } from '../lib/smart-access.ts'
@@ -173,7 +174,7 @@ export function IndicatorDialog({
         return
       }
       const task: SmartTask = {
-        id: smartTask?.id ?? crypto.randomUUID(),
+        id: smartTask?.id ?? randomId(),
         name,
         weight,
         detail: draft.detail.trim(),
@@ -193,7 +194,7 @@ export function IndicatorDialog({
       if (!evaluatorId) nextErrors.evaluator = 'Выберите оценщика из сотрудников.'
       else {
         indicator = {
-          id: initial?.id ?? crypto.randomUUID(),
+          id: initial?.id ?? randomId(),
           type: 'standard',
           name,
           weight,
@@ -288,7 +289,7 @@ export function IndicatorDialog({
                     return
                   }
                   const comment: SmartComment = {
-                    id: crypto.randomUUID(),
+                    id: randomId(),
                     text,
                     createdAt: new Date().toISOString(),
                   }

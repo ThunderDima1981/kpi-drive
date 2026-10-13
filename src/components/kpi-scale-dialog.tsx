@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { explainKpi, kpiCompletionOf, kpiSeries, planPoint } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { formatNumber, formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { CatalogKpi, KpiPoint } from '../types.ts'
@@ -124,7 +125,7 @@ function KpiScaleEditor({ kpi, weight }: { kpi: CatalogKpi; weight?: number }) {
     while (source.points.some((item) => sameValue(item.value, value))) value += step
     updateCatalogKpi({
       ...source,
-      points: [...source.points, { id: crypto.randomUUID(), value, completion: last?.completion ?? 100 }],
+      points: [...source.points, { id: randomId(), value, completion: last?.completion ?? 100 }],
     })
     setError('')
   }

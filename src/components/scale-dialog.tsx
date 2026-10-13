@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { explainStandard, standardSeries, weightedOf } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
 import type { ScalePoint, StandardIndicator } from '../types.ts'
@@ -117,7 +118,7 @@ function StandardScaleEditor({
     const completion = last?.completion ?? 100
     updateIndicator(employeeId, {
       ...source,
-      points: [...source.points, { id: crypto.randomUUID(), score, completion }],
+      points: [...source.points, { id: randomId(), score, completion }],
     })
     setError('')
   }

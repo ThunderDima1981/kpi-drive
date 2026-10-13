@@ -1,4 +1,5 @@
 import { startingFact } from './calc.ts'
+import { randomId } from './id.ts'
 import type { Indicator, SmartTask, TeamData } from '../types.ts'
 
 export const MONTHS = [
@@ -138,7 +139,7 @@ export function moveSmartTask(
     return { error: 'В следующем месяце нет блока smart-задач. Администратор должен добавить блок.' }
   }
 
-  const moved: SmartTask = { ...structuredClone(task), id: crypto.randomUUID() }
+  const moved: SmartTask = { ...structuredClone(task), id: randomId() }
   const nextPeriods = periods.map((period) => {
     if (period.id === sourcePeriodId) {
       return replaceSmartTasks(period, employeeId, sourceSmart.id, (tasks) => tasks.filter((item) => item.id !== taskId))

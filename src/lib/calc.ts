@@ -1,4 +1,5 @@
 import { formatNumber } from './format.ts'
+import { randomId } from './id.ts'
 import { defaultSmartPoints, smartGroupCompletion } from './smart.ts'
 import type { CatalogKpi, Indicator, KpiPoint, ScalePoint, SmartIndicator, StandardIndicator, StandardScore } from '../types.ts'
 
@@ -99,7 +100,7 @@ export function pointsWithPlan(points: KpiPoint[], plan: number): { points: KpiP
     return { error: 'Такое значение уже есть на шкале.' }
   }
   if (!current) {
-    return { points: [...points, { id: crypto.randomUUID(), value: plan, completion: 100 }] }
+    return { points: [...points, { id: randomId(), value: plan, completion: 100 }] }
   }
   if (nearlyEqual(current.value, plan)) return { points }
   return { points: points.map((point) => (point.id === current.id ? { ...point, value: plan } : point)) }
@@ -123,7 +124,7 @@ export function normalizeKpiPoints(value: unknown, prefix = 'kpi'): KpiPoint[] {
     if (!Number.isFinite(point.value) || !Number.isFinite(point.completion)) return []
     return [
       {
-        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        id: typeof point.id === 'string' && point.id ? point.id : randomId(),
         value: point.value as number,
         completion: point.completion as number,
       },
@@ -201,7 +202,7 @@ function normalizePoints(value: unknown): ScalePoint[] {
     if (!Number.isFinite(point.score) || !Number.isFinite(point.completion)) return []
     return [
       {
-        id: typeof point.id === 'string' && point.id ? point.id : crypto.randomUUID(),
+        id: typeof point.id === 'string' && point.id ? point.id : randomId(),
         score: point.score as number,
         completion: point.completion as number,
       },

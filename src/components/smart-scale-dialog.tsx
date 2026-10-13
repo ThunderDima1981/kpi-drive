@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { explainSmart, smartSeries, weightedOf } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { smartGroupCompletion } from '../lib/smart.ts'
 import { formatPercent, parseNumber } from '../lib/format.ts'
 import { useTeamStore } from '../store/team-store.ts'
@@ -120,7 +121,7 @@ function SmartScaleEditor({
     while (source.points.some((item) => sameScore(item.score, score))) score += step
     updateIndicator(employeeId, {
       ...source,
-      points: [...source.points, { id: crypto.randomUUID(), score, completion: last?.completion ?? 100 }],
+      points: [...source.points, { id: randomId(), score, completion: last?.completion ?? 100 }],
     })
     setError('')
   }

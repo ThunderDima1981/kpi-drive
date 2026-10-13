@@ -6,6 +6,7 @@ import { ExcelButtons } from './excel-buttons.tsx'
 import { KpiScaleDialog } from './kpi-scale-dialog.tsx'
 import { PlanInput } from './plan-input.tsx'
 import { defaultKpiPoints, kpiCompletionOf } from '../lib/calc.ts'
+import { randomId } from '../lib/id.ts'
 import { formatNumber, formatPercent } from '../lib/format.ts'
 import { importReport, kpiScale, parseKpiSheet, type SheetIssue } from '../lib/spreadsheet.ts'
 import { downloadWorkbook, kpiTemplate, readFirstSheet } from '../lib/workbook.ts'
@@ -36,7 +37,7 @@ export function KpiCatalogSection() {
       setError('Введите название показателя.')
       return
     }
-    const id = crypto.randomUUID()
+    const id = randomId()
     addCatalogKpi({ id, name: nextName, unit: unit.trim(), fact: 0, points: defaultKpiPoints(id) })
     setName('')
     setUnit('')
@@ -81,7 +82,7 @@ export function KpiCatalogSection() {
           continue
         }
         useTeamStore.getState().addCatalogKpi({
-          id: crypto.randomUUID(),
+          id: randomId(),
           name: row.name,
           unit: row.unit,
           fact: row.fact,

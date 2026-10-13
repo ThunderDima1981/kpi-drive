@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { normalizeCatalogKpi, normalizeEvaluatorId, normalizeStandard, pointsFromLegacyScale, pointsWithPlan, DEFAULT_MAX_CAP, fitsMatrixWeight } from '../lib/calc.ts'
 import { directManagerId, sanitizeEmployees } from '../lib/org.ts'
+import { randomId } from '../lib/id.ts'
 import { emptyTeam, ensurePeriod, mapCurrentPeriod, mapEveryPeriod, parsePeriodLabel, publishPeriods } from '../lib/period.ts'
 import { collapseSmartIndicators, defaultSmartPoints, normalizeIndicator } from '../lib/smart.ts'
 import type { CatalogKpi, Employee, Indicator, KpiIndicator, PeriodSnapshot, SmartComment, SmartStatus, SmartTask, TeamData } from '../types.ts'
@@ -33,7 +34,7 @@ interface TeamState extends TeamData {
 }
 
 function uid() {
-  return crypto.randomUUID()
+  return randomId()
 }
 
 function normalizeTeam(persisted: unknown): TeamData {
