@@ -12,11 +12,11 @@ export default defineConfig({
   },
   server: {
     host: '::',
-    port: 4317,
+    port: Number(process.env.WEB_PORT ?? 4317),
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4327',
+        target: process.env.API_TARGET ?? 'http://127.0.0.1:4327',
         timeout: 0,
         proxyTimeout: 0,
       },
