@@ -94,7 +94,34 @@ describe('user permissions', () => {
     expect(userChangeAllowed(team(), scored)).toBe(false)
   })
 
-  it('allows a comment on a new task and rejects one on an existing task', () => {
+  it('lets an employee add a comment to an existing task but not rewrite earlier comments', () => {
+    const stored = structuredClone(team())
+    const storedSmart = stored.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (storedSmart?.type !== 'smart') throw new Error('missing smart')
+    storedSmart.tasks[0]!.comments = [{ id: 'c1', text: 'Первый', createdAt: '2026-10-09T00:00:00.000Z' }]
+    stored.periods[0]!.employees = stored.employees
+
+    const appended = structuredClone(stored)
+    const appendedSmart = appended.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (appendedSmart?.type !== 'smart') throw new Error('missing smart')
+    appendedSmart.tasks[0]!.comments.push({ id: 'c2', text: 'Второй', createdAt: '2026-10-10T00:00:00.000Z' })
+    appended.periods[0]!.employees = appended.employees
+    const merged = asSaved(mergeUserTeam(stored, appended, new Set(['person']), employeeActor))
+    const savedSmart = merged?.saved.employees[0]?.indicators.find((item) => item.type === 'smart')
+    expect(savedSmart?.type === 'smart' ? savedSmart.tasks[0]?.comments.map((item) => item.text) : null).toEqual([
+      'Первый',
+      'Второй',
+    ])
+
+    const rewritten = structuredClone(stored)
+    const rewrittenSmart = rewritten.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (rewrittenSmart?.type !== 'smart') throw new Error('missing smart')
+    rewrittenSmart.tasks[0]!.comments = [{ id: 'c1', text: 'Исправлено', createdAt: '2026-10-09T00:00:00.000Z' }]
+    rewritten.periods[0]!.employees = rewritten.employees
+    expect(mergeUserTeam(stored, rewritten, new Set(['person']), employeeActor)).toBeNull()
+  })
+
+  it('allows a comment on a new task and rejects edits to existing comments', () => {
     const created = structuredClone(team())
     const smart = created.employees[0]?.indicators.find((item) => item.type === 'smart')
     if (smart?.type !== 'smart') throw new Error('missing smart')
@@ -110,7 +137,15 @@ describe('user permissions', () => {
     if (existing?.type !== 'smart') throw new Error('missing smart')
     existing.tasks[0]!.comments = [{ id: 'c1', text: 'Позже', createdAt: '2026-10-09T00:00:00.000Z' }]
     commented.periods[0]!.employees = commented.employees
-    expect(userChangeAllowed(team(), commented)).toBe(false)
+    expect(userChangeAllowed(team(), commented)).toBe(true)
+    existing.tasks[0]!.comments = []
+    const withComment = structuredClone(commented)
+    const base = structuredClone(team())
+    const baseSmart = base.employees[0]?.indicators.find((item) => item.type === 'smart')
+    if (baseSmart?.type !== 'smart') throw new Error('missing smart')
+    baseSmart.tasks[0]!.comments = [{ id: 'c0', text: 'Было', createdAt: '2026-10-08T00:00:00.000Z' }]
+    base.periods[0]!.employees = base.employees
+    expect(userChangeAllowed(base, withComment)).toBe(false)
   })
 
   it('keeps hidden employees when a granted matrix changes', () => {

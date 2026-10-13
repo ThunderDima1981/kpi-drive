@@ -87,13 +87,14 @@ function applySmartTasks(
   const tasks: SmartTask[] = []
   for (const task of before.tasks) {
     const next = afterTasks.get(task.id)
-    if (!next || stable(withoutStatus(task)) !== stable(withoutStatus(next))) return null
+    if (!next || stable(withoutStatus(task)) !== stable(withoutStatus({ ...next, comments: task.comments }))) return null
+    if (!commentsAppended(task.comments, next.comments)) return null
     const statusOk =
       actor && employee
         ? canChangeStatus(actor, employee, task.status, next.status)
         : next.status === task.status || (next.status === 'done' && task.status !== 'done' && task.status !== 'closed')
     if (!statusOk) return actor && employee ? { error: statusChangeError(task.status, next.status) } : null
-    tasks.push(next.status === task.status ? task : { ...task, status: next.status })
+    tasks.push({ ...task, status: next.status, comments: next.comments })
   }
   for (const task of after.tasks) {
     if (known.has(task.id)) continue
@@ -111,6 +112,12 @@ function applySmartTasks(
 
 function withoutStatus(task: SmartTask) {
   return { ...task, status: 'created' }
+}
+
+function commentsAppended(before: SmartTask['comments'], after: SmartTask['comments']) {
+  if (after.length < before.length) return false
+  if (!before.every((comment, index) => stable(comment) === stable(after[index]))) return false
+  return after.slice(before.length).every((comment) => typeof comment.text === 'string' && comment.text.trim().length > 0)
 }
 
 export function visibleTeam(team: TeamData, allowedIds: ReadonlySet<string>, periodId = team.currentPeriod) {
