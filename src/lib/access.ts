@@ -14,6 +14,11 @@ export function isRole(value: unknown): value is Role {
   return value === 'admin' || value === 'user'
 }
 
+export function documentOwnerId(user: { id: string; role: Role; teamOwnerId: string | null }) {
+  if (user.teamOwnerId) return user.teamOwnerId
+  return user.role === 'admin' ? user.id : null
+}
+
 export function userChangeAllowed(before: TeamData, after: TeamData) {
   if (!isPeriodSet(after)) return false
   if (after.periodLabel !== formatPeriod(after.currentPeriod)) return false

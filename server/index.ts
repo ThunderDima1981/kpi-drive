@@ -4,7 +4,7 @@ import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { streamSSE } from 'hono/streaming'
 import { publishTeamUpdate, subscribeTeamUpdates } from '../src/lib/team-live.ts'
-import { isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
+import { documentOwnerId, isRole, mergeUserTeam, visibleTeam } from '../src/lib/access.ts'
 import { emptyTeam, moveSmartTask, parsePeriodId } from '../src/lib/period.ts'
 import { applyEvaluation, evaluationItems, hasEvaluations } from '../src/lib/evaluations.ts'
 import { canMoveSmart, smartChangeError } from '../src/lib/smart-access.ts'
@@ -220,7 +220,7 @@ app.delete('/api/users/:id', async (c) => {
 app.get('/api/team/events', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  const ownerId = documentOwnerId(user)
   if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   c.header('Cache-Control', 'no-cache')
   c.header('X-Accel-Buffering', 'no')
@@ -245,10 +245,10 @@ app.get('/api/team/events', async (c) => {
 app.get('/api/team', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  if (user.role === 'admin') return c.json((await loadTeamDocument(user.id)) ?? emptyTeam())
-  if (!user.teamOwnerId) return c.json(emptyTeam())
-  const document = await loadTeamDocument(user.teamOwnerId)
-  if (!document) return c.json(emptyTeam())
+  const ownerId = documentOwnerId(user)
+  if (!ownerId) return c.json(emptyTeam())
+  const document = (await loadTeamDocument(ownerId)) ?? emptyTeam()
+  if (user.role === 'admin') return c.json(document)
   return c.json(visibleTeam(document, new Set(user.matrixIds)))
 })
 
@@ -262,7 +262,7 @@ app.post('/api/smart-tasks/move', async (c) => {
   if (!employeeId || employeeId.length > 80 || !taskId || taskId.length > 80 || !parsePeriodId(periodId)) {
     return c.json({ error: 'Некорректный запрос.' }, 400)
   }
-  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  const ownerId = documentOwnerId(user)
   if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   const stored = await loadTeamDocument(ownerId)
   if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
@@ -290,26 +290,30 @@ app.put('/api/team', async (c) => {
   if (!isTeamDocument(body)) return c.json({ error: 'Некорректные данные команды.' }, 400)
   if (JSON.stringify(body).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
   const actor = { role: user.role, employeeId: user.employeeId, name: user.name }
+  const ownerId = documentOwnerId(user)
+  if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   if (user.role === 'admin') {
-    const stored = (await loadTeamDocument(user.id)) ?? emptyTeam()
+    const stored = (await loadTeamDocument(ownerId)) ?? emptyTeam()
+    const storedHasPeople = stored.periods.some((period) => period.employees.length > 0)
+    const incomingHasPeople = body.periods.some((period) => period.employees.length > 0)
+    if (user.id !== ownerId && storedHasPeople && !incomingHasPeople) return c.json(stored)
     const statusError = smartChangeError(stored, body, actor)
     if (statusError) return c.json({ error: statusError }, 403)
-    await saveTeamDocument(user.id, body)
-    publishTeamUpdate(user.id, clientOrigin(c))
-    void deliverSmartMail(user.id, stored, body, actor).catch((error) => console.error(error))
+    await saveTeamDocument(ownerId, body)
+    publishTeamUpdate(ownerId, clientOrigin(c))
+    void deliverSmartMail(ownerId, stored, body, actor).catch((error) => console.error(error))
     return c.json(body)
   }
-  if (!user.teamOwnerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
-  const stored = await loadTeamDocument(user.teamOwnerId)
+  const stored = await loadTeamDocument(ownerId)
   if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   const merged = mergeUserTeam(stored, body, new Set(user.matrixIds), actor)
   if (!merged || !('saved' in merged)) {
     return c.json({ error: merged && 'error' in merged ? merged.error : 'Эти правки доступны только администратору.' }, 403)
   }
   if (JSON.stringify(merged.saved).length > 1_500_000) return c.json({ error: 'Слишком большой объём данных.' }, 413)
-  await saveTeamDocument(user.teamOwnerId, merged.saved)
-  publishTeamUpdate(user.teamOwnerId, clientOrigin(c))
-  void deliverSmartMail(user.teamOwnerId, stored, merged.saved, actor).catch((error) => console.error(error))
+  await saveTeamDocument(ownerId, merged.saved)
+  publishTeamUpdate(ownerId, clientOrigin(c))
+  void deliverSmartMail(ownerId, stored, merged.saved, actor).catch((error) => console.error(error))
   return c.json(merged.view)
 })
 
@@ -350,7 +354,7 @@ app.post('/api/mail/test', async (c) => {
 app.get('/api/evaluations', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Нужно войти.' }, 401)
-  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  const ownerId = documentOwnerId(user)
   const team = ownerId ? await loadTeamDocument(ownerId) : null
   if (!team) return c.json({ assigned: false, period: '', items: [] })
   const requested = c.req.query('period') ?? ''
@@ -374,7 +378,7 @@ app.post('/api/evaluations', async (c) => {
     return c.json({ error: 'Некорректный запрос.' }, 400)
   }
   if (!Number.isFinite(score)) return c.json({ error: 'Такой оценки нет на шкале.' }, 400)
-  const ownerId = user.role === 'admin' ? user.id : user.teamOwnerId
+  const ownerId = documentOwnerId(user)
   if (!ownerId) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)
   const stored = await loadTeamDocument(ownerId)
   if (!stored) return c.json({ error: 'Администратор ещё не открыл матрицы.' }, 403)

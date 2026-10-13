@@ -3,7 +3,7 @@ import { defaultStandardPoints } from './calc.ts'
 import { sanitizeEmployees } from './org.ts'
 import { publishPeriods } from './period.ts'
 import { defaultSmartPoints } from './smart.ts'
-import { mergeUserTeam, userChangeAllowed, visibleTeam } from './access.ts'
+import { documentOwnerId, mergeUserTeam, userChangeAllowed, visibleTeam } from './access.ts'
 import type { SmartActor } from './smart-access.ts'
 import type { SmartTask, TeamData } from '../types.ts'
 
@@ -54,6 +54,15 @@ function team(status: SmartTask['status'] = 'created'): TeamData {
     '2026-10',
   )
 }
+
+describe('documentOwnerId', () => {
+  it('keeps the founding administrator on their own team and joins later administrators to it', () => {
+    expect(documentOwnerId({ id: 'owner', role: 'admin', teamOwnerId: null })).toBe('owner')
+    expect(documentOwnerId({ id: 'boss', role: 'admin', teamOwnerId: 'owner' })).toBe('owner')
+    expect(documentOwnerId({ id: 'person', role: 'user', teamOwnerId: 'owner' })).toBe('owner')
+    expect(documentOwnerId({ id: 'guest', role: 'user', teamOwnerId: null })).toBeNull()
+  })
+})
 
 describe('user permissions', () => {
   it('allows a new smart task and the done status', () => {
