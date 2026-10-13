@@ -22,12 +22,29 @@ export function useOrgList(employees: Employee[]) {
     })
   }
 
+  function reveal(id: string | null) {
+    if (!id) return
+    const byId = new Map(employees.map((employee) => [employee.id, employee]))
+    setExpanded((current) => {
+      const next = new Set(current)
+      const seen = new Set<string>()
+      let cursor: string | null = id
+      while (cursor && !seen.has(cursor)) {
+        seen.add(cursor)
+        next.add(cursor)
+        cursor = byId.get(cursor)?.managerId ?? null
+      }
+      return next
+    })
+  }
+
   return {
     query,
     setQuery,
     nodes: view.nodes,
     open: searching ? view.expanded : expanded,
     toggle,
+    reveal,
     searching,
   }
 }

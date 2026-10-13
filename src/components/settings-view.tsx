@@ -99,7 +99,14 @@ export function SettingsView({
           <p className="px-5 py-8 text-sm text-ink-soft">Никого не нашли по этому запросу.</p>
         ) : (
           <div className="mt-3">
-            <SettingsBranches nodes={org.nodes} depth={0} open={org.open} employees={employees} onToggle={org.toggle} />
+            <SettingsBranches
+              nodes={org.nodes}
+              depth={0}
+              open={org.open}
+              employees={employees}
+              onToggle={org.toggle}
+              onManagerSet={org.reveal}
+            />
           </div>
         )}
       </section>
@@ -126,12 +133,14 @@ function SettingsBranches({
   open,
   employees,
   onToggle,
+  onManagerSet,
 }: {
   nodes: OrgNode[]
   depth: number
   open: Set<string>
   employees: Employee[]
   onToggle: (id: string) => void
+  onManagerSet: (managerId: string | null) => void
 }) {
   return (
     <div>
@@ -149,7 +158,7 @@ function SettingsBranches({
                 <span className="mt-2 size-6 shrink-0" />
               )}
               <div className="min-w-0 flex-1">
-                <EmployeeRow employee={node.employee} employees={employees} />
+                <EmployeeRow employee={node.employee} employees={employees} onManagerSet={onManagerSet} />
               </div>
             </div>
             {hasChildren && expanded ? (
@@ -159,6 +168,7 @@ function SettingsBranches({
                 open={open}
                 employees={employees}
                 onToggle={onToggle}
+                onManagerSet={onManagerSet}
               />
             ) : null}
           </div>
@@ -168,7 +178,15 @@ function SettingsBranches({
   )
 }
 
-function EmployeeRow({ employee, employees }: { employee: Employee; employees: Employee[] }) {
+function EmployeeRow({
+  employee,
+  employees,
+  onManagerSet,
+}: {
+  employee: Employee
+  employees: Employee[]
+  onManagerSet: (managerId: string | null) => void
+}) {
   const updateEmployee = useTeamStore((state) => state.updateEmployee)
   const setManager = useTeamStore((state) => state.setManager)
   const removeEmployee = useTeamStore((state) => state.removeEmployee)
@@ -214,7 +232,11 @@ function EmployeeRow({ employee, employees }: { employee: Employee; employees: E
         <select
           aria-label={`Руководитель: ${employee.name}`}
           value={employee.managerId ?? ''}
-          onChange={(event) => setManager(employee.id, event.target.value || null)}
+          onChange={(event) => {
+            const managerId = event.target.value || null
+            setManager(employee.id, managerId)
+            onManagerSet(managerId)
+          }}
           className="h-9 w-full rounded-lg border border-input bg-white px-2 text-sm"
         >
           <option value="">Без руководителя</option>
