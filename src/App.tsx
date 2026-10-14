@@ -7,10 +7,11 @@ import { SettingsView } from './components/settings-view.tsx'
 import { Shell } from './components/shell.tsx'
 import { ApiError, api } from './lib/api.ts'
 import { readAuthLink } from './lib/auth-link.ts'
+import { clearAvatars, loadAvatars } from './lib/avatars.ts'
 import { hrefFor, parseHash, SETTINGS_SECTIONS, type Route } from './lib/routes.ts'
 import type { User } from './lib/session.ts'
 import { RoleProvider } from './lib/role.tsx'
-import { clearTeamLocal, flushTeamSync, loadTeam, startTeamEvents, startTeamSync } from './lib/sync.ts'
+import { clearTeamLocal, flushTeamSync, loadTeam, onTeamRefreshed, startTeamEvents, startTeamSync } from './lib/sync.ts'
 
 type Session =
   | { status: 'loading' }
@@ -39,6 +40,15 @@ export default function App() {
   useEffect(() => {
     if (session.status !== 'in') return
     return startTeamEvents()
+  }, [session.status])
+
+  useEffect(() => {
+    if (session.status !== 'in') return
+    void loadAvatars()
+    const unsubscribe = onTeamRefreshed(() => void loadAvatars())
+    return () => {
+      unsubscribe()
+    }
   }, [session.status])
 
   useEffect(() => {
@@ -87,6 +97,7 @@ export default function App() {
   async function logout() {
     await flushTeamSync()
     clearTeamLocal()
+    clearAvatars()
     await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     setSession({ status: 'out' })
     navigate({ name: 'dashboard' })

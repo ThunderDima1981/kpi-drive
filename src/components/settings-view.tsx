@@ -9,7 +9,7 @@ import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { UsersSection } from './users-section.tsx'
 import { useOrgList } from './use-org-list.ts'
-import { initials } from '../lib/format.ts'
+import { Avatar } from './avatar.tsx'
 import { managerChoices, type OrgNode } from '../lib/org.ts'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../lib/routes.ts'
 import type { User } from '../lib/session.ts'
@@ -217,9 +217,7 @@ function EmployeeRow({
 
   return (
     <div className="flex items-start gap-3">
-      <span className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold">
-        {initials(name || employee.name)}
-      </span>
+      <Avatar name={name || employee.name} employeeId={employee.id} className="mt-0.5" />
       <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
       <Label className="grid flex-1 gap-1">
         <span className="sr-only">ФИО</span>

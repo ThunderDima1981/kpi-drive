@@ -17,7 +17,8 @@ import {
   planPoint,
   weightedOf,
 } from '../lib/calc.ts'
-import { formatNumber, formatPercent, initials, parseNumber, zoneOf, ZONES } from '../lib/format.ts'
+import { formatNumber, formatPercent, parseNumber, zoneOf, ZONES } from '../lib/format.ts'
+import { Avatar } from './avatar.tsx'
 import { ApiError } from '../lib/api.ts'
 import { useActor, useIsAdmin } from '../lib/role.tsx'
 import { canChangeStatus, canMoveSmart } from '../lib/smart-access.ts'
@@ -96,9 +97,7 @@ export function MatrixView({ employeeId, onBack }: { employeeId: string; onBack:
 
       <header className="grid items-center gap-4 rounded-2xl border border-line bg-card p-5 shadow-sm lg:grid-cols-[1fr_16rem]">
         <div className="flex items-center gap-4">
-          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-ink text-lg font-semibold text-white">
-            {initials(employee.name)}
-          </span>
+          <Avatar name={employee.name} employeeId={employee.id} className="size-14 rounded-2xl bg-ink text-lg text-white" />
           <div>
             <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">{periodLabel}</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{employee.name}</h1>

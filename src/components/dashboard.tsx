@@ -4,7 +4,8 @@ import { PeriodCalendar } from './period-calendar.tsx'
 import { OrgSearch, OrgToggle } from './org-toggle.tsx'
 import { useOrgList } from './use-org-list.ts'
 import { matrixResult } from '../lib/calc.ts'
-import { formatPercent, initials, peopleLabel, zoneOf, ZONES, type ZoneKey } from '../lib/format.ts'
+import { formatPercent, peopleLabel, zoneOf, ZONES, type ZoneKey } from '../lib/format.ts'
+import { Avatar } from './avatar.tsx'
 import type { OrgNode } from '../lib/org.ts'
 import { useIsAdmin } from '../lib/role.tsx'
 import { useTeamStore } from '../store/team-store.ts'
@@ -184,9 +185,7 @@ function EmployeeCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="grid size-11 place-items-center rounded-full bg-muted text-sm font-semibold">
-            {initials(row.employee.name)}
-          </span>
+          <Avatar name={row.employee.name} employeeId={row.employee.id} className="size-11" />
           <span>
             <span className="block font-semibold">{row.employee.name}</span>
             <span className="block text-sm text-ink-soft">{row.employee.position}</span>

@@ -3,6 +3,7 @@ import { PeriodCalendar } from './period-calendar.tsx'
 import { ApiError, api } from '../lib/api.ts'
 import { scoreLabel, type EvaluationItem } from '../lib/evaluations.ts'
 import { formatPercent } from '../lib/format.ts'
+import { Avatar } from './avatar.tsx'
 import { useTeamStore } from '../store/team-store.ts'
 
 type EvaluationResponse = {
@@ -84,8 +85,13 @@ export function EvaluationsView() {
       <ul className="grid gap-3">
         {items.map((item) => (
           <li key={`${item.employeeId}-${item.indicatorId}`} className="rounded-2xl border border-line bg-card p-5 shadow-sm">
-            <p className="font-medium">{item.employeeName}</p>
-            <p className="text-sm text-ink-soft">{item.position}</p>
+            <div className="flex items-center gap-3">
+              <Avatar name={item.employeeName} employeeId={item.employeeId} />
+              <div className="min-w-0">
+                <p className="font-medium">{item.employeeName}</p>
+                <p className="text-sm text-ink-soft">{item.position}</p>
+              </div>
+            </div>
             <p className="mt-3 font-medium">{item.name}</p>
             <p className="text-sm text-ink-soft">Вес {formatPercent(item.weight)}</p>
             <div className="mt-3 flex flex-wrap gap-2">

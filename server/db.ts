@@ -72,6 +72,13 @@ export async function migrate() {
       used_at timestamptz
     );
 
+    CREATE TABLE IF NOT EXISTS avatars (
+      user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      mime text NOT NULL,
+      data bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id bigserial PRIMARY KEY,
       user_id uuid REFERENCES users(id) ON DELETE SET NULL,

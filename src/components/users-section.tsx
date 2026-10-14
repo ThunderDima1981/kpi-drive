@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ExcelButtons } from './excel-buttons.tsx'
+import { AvatarPicker } from './avatar-picker.tsx'
 import { InvitationsPanel } from './invitations-panel.tsx'
 import { AccessFields, Field, type TeamEmployee } from './user-fields.tsx'
 import {
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Role } from '../lib/access.ts'
 import { api } from '../lib/api.ts'
+import { loadAvatars } from '../lib/avatars.ts'
 import { importReport, matchEmployee, parseUserSheet, type SheetIssue } from '../lib/spreadsheet.ts'
 import { downloadWorkbook, readFirstSheet, userTemplate } from '../lib/workbook.ts'
 import type { User } from '../lib/session.ts'
@@ -38,6 +40,7 @@ export function UsersSection({
 }) {
   const employees = useTeamStore((state) => state.employees)
   const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [inviting, setInviting] = useState(false)
@@ -62,6 +65,9 @@ export function UsersSection({
       })
       .catch(() => {
         if (!cancelled) setError('Не удалось загрузить список пользователей.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -191,11 +197,19 @@ export function UsersSection({
 
       <InvitationsPanel employees={employees} inviting={inviting} onCloseForm={() => setInviting(false)} />
 
-      {users.length === 0 ? <p className="mt-4 text-sm text-ink-soft">Пользователей пока нет.</p> : null}
+      {loading ? (
+        <p role="status" className="mt-4 text-sm text-ink-soft">
+          Загружаем пользователей…
+        </p>
+      ) : users.length === 0 && !error ? (
+        <p className="mt-4 text-sm text-ink-soft">Пользователей пока нет.</p>
+      ) : null}
       <ul className="mt-4 grid gap-3">
         {users.map((user) => (
           <li key={user.id} className="grid gap-3 rounded-xl border border-line p-3 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
+            <div className="flex items-start gap-3">
+              <AvatarPicker userId={user.id} name={user.name} showActions={false} className="size-12" />
+              <div className="min-w-0">
               <p className="font-medium">
                 {user.name}
                 {user.id === currentUserId ? <span className="ml-2 text-xs font-normal text-ink-soft">это вы</span> : null}
@@ -210,6 +224,7 @@ export function UsersSection({
                 ) : null}
               </p>
               <AccessSummary user={user} employees={employees} onOpenEmployee={onOpenEmployee} />
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline" onClick={() => setEditing(user)}>
@@ -237,6 +252,7 @@ export function UsersSection({
           onClose={() => setEditing(null)}
           onSaved={(user) => {
             replace(user)
+            void loadAvatars()
             setEditing(null)
             setError('')
           }}
@@ -277,6 +293,7 @@ export function UsersSection({
           onDeleted={() => {
             const removed = deleteFor
             setUsers((items) => items.filter((item) => item.id !== removed.id))
+            void loadAvatars()
             setDeleteFor(null)
             setError('')
             if (removed.id === currentUserId) onSelfRemoved()
@@ -410,6 +427,11 @@ function EditUserDialog({
             <DialogTitle>Изменить пользователя</DialogTitle>
             <DialogDescription>Имя, почта, права, сотрудник и доступные матрицы сохраняются для этой учётной записи.</DialogDescription>
           </DialogHeader>
+          <div className="grid gap-1.5">
+            <span className="text-sm font-medium">Фото</span>
+            <AvatarPicker userId={user.id} name={user.name} className="size-14" />
+            <span className="text-xs text-ink-soft">Фото видно у сотрудника, связанного с этой учётной записью, везде в приложении.</span>
+          </div>
           <Field label="Имя" name="name" defaultValue={user.name} autoComplete="off" />
           <Field label="Почта" name="email" type="email" defaultValue={user.email} autoComplete="off" />
           <Label className="grid gap-1.5">

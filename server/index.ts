@@ -11,6 +11,7 @@ import { canMoveSmart, smartChangeError } from '../src/lib/smart-access.ts'
 import { mailErrorText } from '../src/lib/smtp.ts'
 import { listAudit, recordAudit, type AuditActor } from './audit.ts'
 import { registerAuthRoutes } from './auth.ts'
+import { registerAvatarRoutes } from './avatars.ts'
 import { deliverSmartMail, loadMailConfig, saveMailConfig, sendTestMail } from './mail.ts'
 import { databaseUrl, migrate, pool } from './db.ts'
 import { ensureLocalPostgres } from './ensure-postgres.ts'
@@ -52,6 +53,7 @@ app.onError((error, c) => {
 app.get('/api/health', (c) => c.json({ ok: true }))
 
 registerAuthRoutes(app)
+registerAvatarRoutes(app)
 
 app.get('/api/users', async (c) => {
   const actor = await requireAdmin(c)
