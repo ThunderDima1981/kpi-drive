@@ -422,7 +422,7 @@ function EditUserDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="sm:max-w-lg">
-        <form onSubmit={(event) => void submit(event)} className="grid gap-4">
+        <form onSubmit={(event) => void submit(event)} className="grid grid-cols-[minmax(0,1fr)] gap-4">
           <DialogHeader>
             <DialogTitle>Изменить пользователя</DialogTitle>
             <DialogDescription>Имя, почта, права, сотрудник и доступные матрицы сохраняются для этой учётной записи.</DialogDescription>
@@ -430,7 +430,7 @@ function EditUserDialog({
           <div className="grid gap-1.5">
             <span className="text-sm font-medium">Фото</span>
             <AvatarPicker userId={user.id} name={user.name} className="size-14" />
-            <span className="text-xs text-ink-soft">Фото видно у сотрудника, связанного с этой учётной записью, везде в приложении.</span>
+            <span className="text-xs text-ink-soft">Фото видно у связанного сотрудника везде в приложении.</span>
           </div>
           <Field label="Имя" name="name" defaultValue={user.name} autoComplete="off" />
           <Field label="Почта" name="email" type="email" defaultValue={user.email} autoComplete="off" />

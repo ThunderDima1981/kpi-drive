@@ -1,8 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { ApiError, api } from './api.ts'
-import { avatarIndex, type AvatarIndex, type AvatarRecord } from './avatar-file.ts'
-
-const AVATAR_SIZE = 320
+import { AVATAR_SIDE, avatarFileProblem, avatarIndex, type AvatarIndex, type AvatarRecord } from './avatar-file.ts'
 
 let records: AvatarRecord[] = []
 let index: AvatarIndex = avatarIndex([])
@@ -41,7 +39,8 @@ export function useAvatarUrl(target: { userId?: string | null; employeeId?: stri
 }
 
 export async function uploadAvatar(userId: string, file: File) {
-  if (!file.type.startsWith('image/')) throw new ApiError(400, 'Выберите файл с картинкой.')
+  const problem = avatarFileProblem(file)
+  if (problem) throw new ApiError(400, problem)
   const blob = await squareImage(file)
   const response = await fetch(`/api/users/${userId}/avatar`, {
     method: 'PUT',
@@ -64,7 +63,7 @@ async function squareImage(file: File): Promise<Blob> {
     throw new ApiError(400, 'Не удалось открыть картинку. Подойдёт JPEG, PNG или WebP.')
   })
   const side = Math.min(bitmap.width, bitmap.height)
-  const size = Math.min(AVATAR_SIZE, side)
+  const size = Math.min(AVATAR_SIDE, side)
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size

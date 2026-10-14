@@ -26,8 +26,8 @@ export function AccessFields({
   }
 
   return (
-    <div className="grid gap-3">
-      <Label className="grid gap-1.5">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+      <Label className="grid min-w-0 gap-1.5">
         <span>Сотрудник</span>
         <select
           aria-label="Сотрудник учётной записи"
@@ -37,7 +37,7 @@ export function AccessFields({
             onEmployeeId(next)
             if (next && !matrixIds.includes(next)) onMatrixIds([...matrixIds, next])
           }}
-          className="h-8 rounded-lg border border-input bg-white px-2 text-sm"
+          className="h-8 w-full min-w-0 rounded-lg border border-input bg-white px-2 text-sm"
         >
           <option value="">Не выбран</option>
           {people.map((employee) => (
@@ -48,7 +48,7 @@ export function AccessFields({
           {employeeId && !known.has(employeeId) ? <option value={employeeId}>Сотрудник не найден</option> : null}
         </select>
       </Label>
-      <fieldset className="grid gap-2">
+      <fieldset className="grid min-w-0 gap-2">
         <legend className="text-sm font-medium">Матрицы</legend>
         <p className="text-xs text-ink-soft">Пользователь открывает только отмеченные матрицы.</p>
         {people.length === 0 && missing.length === 0 ? (
@@ -63,8 +63,8 @@ export function AccessFields({
                     aria-label={`Матрица: ${employee.name}`}
                     onCheckedChange={(checked) => toggle(employee.id, checked === true)}
                   />
-                  <span>{employee.name}</span>
-                  <span className="text-ink-soft">{employee.position}</span>
+                  <span className="shrink-0">{employee.name}</span>
+                  <span className="min-w-0 truncate text-ink-soft">{employee.position}</span>
                 </label>
               </li>
             ))}

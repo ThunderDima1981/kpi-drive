@@ -1,3 +1,19 @@
+export const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+export const AVATAR_MAX_FILE_MB = 15
+export const AVATAR_SIDE = 320
+export const AVATAR_RULES = [
+  `Формат JPEG, PNG или WebP, файл до ${AVATAR_MAX_FILE_MB} МБ.`,
+  'Лучше квадратное фото, лицо по центру: края обрежутся до квадрата.',
+  `Картинка уменьшится до ${AVATAR_SIDE}×${AVATAR_SIDE} пикселей.`,
+]
+
+export function avatarFileProblem(file: { type: string; size: number }) {
+  if (!AVATAR_TYPES.includes(file.type)) return 'Подходит только JPEG, PNG или WebP.'
+  if (file.size > AVATAR_MAX_FILE_MB * 1024 * 1024) return `Файл больше ${AVATAR_MAX_FILE_MB} МБ. Выберите фото поменьше.`
+  if (file.size === 0) return 'Файл пустой.'
+  return null
+}
+
 export type AvatarRecord = { userId: string; employeeId: string | null; version: string }
 
 export type AvatarIndex = { byUser: Map<string, string>; byEmployee: Map<string, string> }

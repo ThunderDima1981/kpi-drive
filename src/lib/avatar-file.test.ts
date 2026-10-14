@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avatarIndex, imageMime } from './avatar-file.ts'
+import { avatarFileProblem, avatarIndex, imageMime } from './avatar-file.ts'
 
 const bytes = (...values: number[]) => new Uint8Array(values)
 const text = (value: string) => [...value].map((char) => char.charCodeAt(0))
@@ -36,5 +36,18 @@ describe('avatarIndex', () => {
       { userId: 'old', employeeId: 'e1', version: '10' },
     ])
     expect(index.byEmployee.get('e1')).toBe('/api/avatars/new?v=20')
+  })
+})
+
+describe('avatarFileProblem', () => {
+  it('accepts JPEG, PNG and WebP up to 15 MB', () => {
+    expect(avatarFileProblem({ type: 'image/jpeg', size: 2_000_000 })).toBeNull()
+    expect(avatarFileProblem({ type: 'image/webp', size: 15 * 1024 * 1024 })).toBeNull()
+  })
+
+  it('explains what is wrong with other files', () => {
+    expect(avatarFileProblem({ type: 'image/gif', size: 1000 })).toBe('Подходит только JPEG, PNG или WebP.')
+    expect(avatarFileProblem({ type: 'image/png', size: 16 * 1024 * 1024 })).toBe('Файл больше 15 МБ. Выберите фото поменьше.')
+    expect(avatarFileProblem({ type: 'image/png', size: 0 })).toBe('Файл пустой.')
   })
 })

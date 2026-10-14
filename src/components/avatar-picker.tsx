@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Camera, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ApiError } from '../lib/api.ts'
+import { AVATAR_RULES } from '../lib/avatar-file.ts'
 import { removeAvatar, uploadAvatar, useAvatarUrl } from '../lib/avatars.ts'
 import { Avatar } from './avatar.tsx'
 
@@ -58,7 +59,7 @@ export function AvatarPicker({
         type="button"
         disabled={pending}
         aria-label={url ? `Заменить фото: ${name}` : `Загрузить фото: ${name}`}
-        title={url ? 'Заменить фото' : 'Загрузить фото'}
+        title={`${url ? 'Заменить фото' : 'Загрузить фото'}\n${AVATAR_RULES.join('\n')}`}
         className="group relative shrink-0 rounded-full focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => input.current?.click()}
       >
@@ -97,6 +98,11 @@ export function AvatarPicker({
             </button>
           ) : null}
           {error ? <span className="text-destructive">{error}</span> : null}
+          <ul className={cn('mt-1 grid gap-0.5', tone === 'dark' ? 'text-white/50' : 'text-ink-soft')}>
+            {AVATAR_RULES.map((rule) => (
+              <li key={rule}>{rule}</li>
+            ))}
+          </ul>
         </div>
       ) : error ? (
         <span className="text-xs text-destructive">{error}</span>
