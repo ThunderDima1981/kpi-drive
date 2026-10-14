@@ -16,9 +16,9 @@ as_app() { sudo -u "$APP_USER" -H "$@"; }
 cd "$APP_DIR"
 
 if [ "${1:-}" != "--after-pull" ]; then
-  step "Копия базы перед обновлением"
+  step "Копия базы и сайта перед обновлением"
   if [ -f deploy/backup.sh ]; then
-    bash deploy/backup.sh || fail "Копия базы не создана — обновление остановлено."
+    bash deploy/backup.sh || fail "Копия не создана — обновление остановлено."
   else
     echo "Скрипта копии ещё нет — он появится после загрузки обновления."
   fi
@@ -64,7 +64,7 @@ install -m 644 deploy/kpi-drive-backup.service /etc/systemd/system/kpi-drive-bac
 install -m 644 deploy/kpi-drive-backup.timer /etc/systemd/system/kpi-drive-backup.timer
 systemctl daemon-reload
 systemctl enable --now kpi-drive-backup.timer >/dev/null
-echo "Ежедневная копия включена: каждый день около 03:30, хранятся 5 последних в /var/backups/kpi-drive"
+echo "Ежедневная копия базы и сайта: около 03:30, хранятся 5 последних в /var/backups/kpi-drive"
 
 step "Перезапуск"
 systemctl restart "$SERVICE"
@@ -76,4 +76,4 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 journalctl -u "$SERVICE" -n 40 --no-pager
-fail "Сервис не ответил за 30 секунд — журнал выше. Последняя копия базы лежит в /var/backups/kpi-drive."
+fail "Сервис не ответил за 30 секунд — журнал выше. Копии базы и сайта перед обновлением лежат в /var/backups/kpi-drive."

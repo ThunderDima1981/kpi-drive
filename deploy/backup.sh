@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Копия базы KPI-Drive. Хранит KEEP последних файлов, старые удаляет.
+# Копия KPI-Drive: база (pg_dump) и папка сайта (tar.gz без node_modules).
+# Хранит KEEP последних копий каждого вида, старые удаляет.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/kpi-drive}"
@@ -13,13 +14,32 @@ DATABASE_URL="${DATABASE_URL:-postgres://kpi:kpi@127.0.0.1:5432/kpi_drive}"
 
 umask 077
 mkdir -p "$BACKUP_DIR"
-target="$BACKUP_DIR/kpi-drive-$(date +%Y-%m-%d_%H%M%S).dump"
+stamp="$(date +%Y-%m-%d_%H%M%S)"
+while [ -e "$BACKUP_DIR/kpi-drive-$stamp.dump" ] || [ -e "$BACKUP_DIR/kpi-drive-site-$stamp.tar.gz" ]; do
+  sleep 1
+  stamp="$(date +%Y-%m-%d_%H%M%S)"
+done
+dump="$BACKUP_DIR/kpi-drive-$stamp.dump"
+site="$BACKUP_DIR/kpi-drive-site-$stamp.tar.gz"
 
-pg_dump --format=custom --no-owner --file="$target.part" "$DATABASE_URL"
-mv "$target.part" "$target"
+pg_dump --format=custom --no-owner --file="$dump.part" "$DATABASE_URL"
+mv "$dump.part" "$dump"
 
-find "$BACKUP_DIR" -maxdepth 1 -name 'kpi-drive-*.dump' -printf '%T@ %p\n' \
-  | sort -rn | tail -n +"$((KEEP + 1))" | cut -d' ' -f2- | xargs -r rm -f --
+if [ -d "$APP_DIR" ]; then
+  tar --create --gzip --file="$site.part" \
+    --directory="$(dirname "$APP_DIR")" \
+    --exclude="$(basename "$APP_DIR")/node_modules" \
+    "$(basename "$APP_DIR")"
+  mv "$site.part" "$site"
+fi
 
-echo "Копия базы: $target ($(du -h "$target" | cut -f1))"
-echo "Хранится копий: $(find "$BACKUP_DIR" -maxdepth 1 -name 'kpi-drive-*.dump' | wc -l) из $KEEP"
+prune() {
+  find "$BACKUP_DIR" -maxdepth 1 -name "$1" -printf '%T@ %p\n' \
+    | sort -rn | tail -n +"$((KEEP + 1))" | cut -d' ' -f2- | xargs -r rm -f --
+}
+prune 'kpi-drive-[0-9]*.dump'
+prune 'kpi-drive-site-*.tar.gz'
+
+echo "Копия базы:  $dump ($(du -h "$dump" | cut -f1))"
+[ -f "$site" ] && echo "Копия сайта: $site ($(du -h "$site" | cut -f1))"
+echo "Хранится копий: база $(find "$BACKUP_DIR" -maxdepth 1 -name 'kpi-drive-[0-9]*.dump' | wc -l), сайт $(find "$BACKUP_DIR" -maxdepth 1 -name 'kpi-drive-site-*.tar.gz' | wc -l) — не больше $KEEP каждого вида"

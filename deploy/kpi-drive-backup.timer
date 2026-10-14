@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily KPI-Drive database backup
+Description=Daily KPI-Drive database and site backup
 
 [Timer]
 OnCalendar=*-*-* 03:30:00

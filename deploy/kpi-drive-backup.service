@@ -1,5 +1,5 @@
 [Unit]
-Description=KPI-Drive database backup
+Description=KPI-Drive database and site backup
 After=postgresql.service
 
 [Service]

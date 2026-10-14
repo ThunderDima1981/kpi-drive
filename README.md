@@ -39,7 +39,7 @@ sudo bash /opt/kpi-drive/deploy/update.sh
 
 Скрипт по шагам:
 
-1. Снимает копию базы.
+1. Снимает копию базы и папки сайта.
 2. Забирает изменения из GitHub (`git pull`).
 3. Ставит зависимости, если менялся `package.json`.
 4. Собирает интерфейс.
@@ -47,7 +47,18 @@ sudo bash /opt/kpi-drive/deploy/update.sh
 6. Устанавливает службы systemd и включает ежедневную копию.
 7. Перезапускает `kpi-drive` и проверяет `/api/health`.
 
-Копия базы делается каждый день около 03:30: таймер `kpi-drive-backup.timer` запускает `deploy/backup.sh`. Копии лежат в `/var/backups/kpi-drive`, хранятся 5 последних. Снять копию вручную: `sudo bash /opt/kpi-drive/deploy/backup.sh`. Восстановить: `sudo bash /opt/kpi-drive/deploy/restore.sh /var/backups/kpi-drive/<файл>.dump`. Скрипт спросит подтверждение и перед заменой сохранит текущее состояние.
+Каждый день около 03:30 таймер `kpi-drive-backup.timer` запускает `deploy/backup.sh`. Скрипт снимает две копии в `/var/backups/kpi-drive`, по 5 последних каждого вида:
+
+- база — `kpi-drive-<дата>.dump`;
+- папка сайта без `node_modules` — `kpi-drive-site-<дата>.tar.gz`. В неё входят код, `.git`, собранный `dist` и `.env`.
+
+Те же две копии делаются перед каждым обновлением. Снять копию вручную: `sudo bash /opt/kpi-drive/deploy/backup.sh`.
+
+Восстановить базу: `sudo bash /opt/kpi-drive/deploy/restore.sh /var/backups/kpi-drive/kpi-drive-<дата>.dump`.
+
+Восстановить сайт: `sudo bash /opt/kpi-drive/deploy/restore.sh /var/backups/kpi-drive/kpi-drive-site-<дата>.tar.gz`. Прежняя папка переименуется в `/opt/kpi-drive.before-restore-<дата>`, зависимости поставятся заново.
+
+Скрипт восстановления спросит подтверждение и перед заменой сохранит текущее состояние.
 
 Cookie входа помечается `Secure`, когда nginx передаёт `X-Forwarded-Proto: https`. Поэтому по https сеанс не уходит по открытому каналу, а локальная разработка по http продолжает работать.
 
