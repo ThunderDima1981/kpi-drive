@@ -76,6 +76,10 @@ describe('describeTeamChanges', () => {
     expect(describeTeamChanges(before, after)).toEqual(['Октябрь 2026: Анна: должность «Директор»'])
   })
 
+  it('ignores whitespace-only renames', () => {
+    expect(describeTeamChanges(team([person()]), team([person({ name: 'Анна ' })]))).toEqual([])
+  })
+
   it('reports opened periods', () => {
     expect(describeTeamChanges(team([person()]), team([person()], ['2026-10', '2026-11']))).toEqual([
       'Открыт период «Ноябрь 2026»',

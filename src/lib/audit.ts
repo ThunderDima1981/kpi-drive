@@ -59,7 +59,7 @@ function catalogChanges(before: CatalogKpi[], after: CatalogKpi[]) {
       lines.push(`Добавлен показатель «${label(kpi.name)}»`)
       continue
     }
-    if (previous.name !== kpi.name) lines.push(`Показатель «${label(previous.name)}» переименован в «${label(kpi.name)}»`)
+    if (label(previous.name) !== label(kpi.name)) lines.push(`Показатель «${label(previous.name)}» переименован в «${label(kpi.name)}»`)
     if (previous.unit !== kpi.unit) lines.push(`Показатель «${label(kpi.name)}»: единица измерения «${kpi.unit}»`)
     if (previous.fact !== kpi.fact) lines.push(`Показатель «${label(kpi.name)}»: факт ${previous.fact} → ${kpi.fact}`)
     if (!samePoints(previous.points, kpi.points)) lines.push(`Показатель «${label(kpi.name)}»: изменена шкала`)
@@ -79,8 +79,8 @@ function employeeChanges(
 ) {
   const who = label(after.name)
   const lines: string[] = []
-  if (before.name !== after.name) lines.push(`Сотрудник «${label(before.name)}» переименован в «${who}»`)
-  if (before.position !== after.position) lines.push(`${who}: должность «${after.position || 'не указана'}»`)
+  if (label(before.name) !== label(after.name)) lines.push(`Сотрудник «${label(before.name)}» переименован в «${who}»`)
+  if (before.position.trim() !== after.position.trim()) lines.push(`${who}: должность «${after.position || 'не указана'}»`)
   if (before.managerId !== after.managerId) lines.push(`${who}: руководитель — ${nameOf(after.managerId)}`)
   const old = new Map(before.indicators.map((indicator) => [indicator.id, indicator]))
   for (const indicator of after.indicators) {
@@ -103,7 +103,7 @@ function indicatorChanges(before: Indicator, after: Indicator, title: string) {
   const lines: string[] = []
   if (before.weight !== after.weight) lines.push(`вес ${title} ${before.weight}% → ${after.weight}%`)
   if (before.type === 'standard' && after.type === 'standard') {
-    if (before.name !== after.name) lines.push(`стандарт «${label(before.name)}» переименован в «${label(after.name)}»`)
+    if (label(before.name) !== label(after.name)) lines.push(`стандарт «${label(before.name)}» переименован в «${label(after.name)}»`)
     if (before.score !== after.score) lines.push(`оценка ${title} ${before.score} → ${after.score}`)
     if (before.evaluatorId !== after.evaluatorId) lines.push(`сменён оценщик ${title}`)
     if (!samePoints(before.points, after.points)) lines.push(`изменена шкала ${title}`)
@@ -128,7 +128,7 @@ function smartChanges(before: SmartTask[], after: SmartTask[]) {
       lines.push(`добавлен смарт ${name}`)
       continue
     }
-    if (previous.name !== task.name) lines.push(`смарт «${label(previous.name)}» переименован в ${name}`)
+    if (label(previous.name) !== label(task.name)) lines.push(`смарт «${label(previous.name)}» переименован в ${name}`)
     if (previous.status !== task.status) {
       lines.push(`смарт ${name}: ${SMART_STATUS_LABEL[previous.status]} → ${SMART_STATUS_LABEL[task.status]}`)
     }
